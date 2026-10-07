@@ -78,16 +78,55 @@ def test_input_output_pass_through_and_the_rest_is_metadata():
     assert "model" not in fields  # only generations carry the model field
 
 
-def test_generations_carry_the_model_and_usage_goes_to_metadata():
+def test_generations_carry_model_and_native_usage_and_cost():
     client = FakeClient()
     tracer = LangfuseTracer(client)  # type: ignore[arg-type]
     with tracer.span("model.generate", model="m-1") as span:
-        span.set(input_tokens=10, output_tokens=2, cost_usd=0.001)
+        span.set(
+            input_tokens=10, output_tokens=2, cache_write_tokens=5, cost_usd=0.001, stop_reason="x"
+        )
 
     (gen,) = client.children
     fields = merged(gen)
     assert fields["model"] == "m-1"
-    assert fields["metadata"]["input_tokens"] == 10 and fields["metadata"]["cost_usd"] == 0.001
+    assert fields["usage_details"] == {
+        "input": 10,
+        "output": 2,
+        "cache_creation_input_tokens": 5,
+    }
+    assert fields["cost_details"] == {"total": 0.001}
+    assert fields["metadata"]["stop_reason"] == "x"  # the rest still lands in metadata
+    assert "input_tokens" not in fields["metadata"]  # usage is native, not duplicated
+
+
+def test_agent_run_usage_stays_in_metadata():
+    client = FakeClient()
+    tracer = LangfuseTracer(client)  # type: ignore[arg-type]
+    with tracer.span("agent.run") as span:
+        span.set(input_tokens=10, cost_usd=0.001)
+    fields = merged(client.children[0])
+    assert "usage_details" not in fields and fields["metadata"]["input_tokens"] == 10
+
+
+def test_a_root_span_propagates_user_and_session_to_the_trace():
+    from contextlib import contextmanager
+
+    entered: list[dict] = []
+
+    @contextmanager
+    def fake_propagate(**kwargs):
+        entered.append(kwargs)
+        yield
+
+    client = FakeClient()
+    tracer = LangfuseTracer(client, propagate=fake_propagate)  # type: ignore[arg-type]
+    with tracer.span("agent.run", principal_id="console-user", session_id="s-1"):
+        with tracer.span("model.generate", model="m-1"):  # nested: must not re-propagate
+            pass
+        with tracer.span("tool.execute", principal_id="smuggled"):  # nested too
+            pass
+
+    assert entered == [{"user_id": "console-user", "session_id": "s-1"}]
 
 
 def test_an_exception_is_recorded_and_re_raised_and_the_span_still_ends():

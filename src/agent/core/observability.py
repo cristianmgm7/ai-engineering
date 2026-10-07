@@ -7,6 +7,8 @@ Content (tool inputs and outputs) is only recorded with ``capture_content=True``
 production keeps metadata, evals and allow-listed users get full content.
 """
 
+from typing import Protocol
+
 from agent.core.run import RunContext, RunResult
 from agent.core.runner import AgentRunner
 from agent.core.tools import ToolExecutor, ToolResult
@@ -48,14 +50,35 @@ class TracedModelProvider:
             return response
 
 
+class ApprovableExecutor(ToolExecutor, Protocol):
+    """A ToolExecutor that can also run a call a human already approved."""
+
+    async def execute_approved(self, call: ToolUseBlock, ctx: RunContext) -> ToolResult: ...
+
+
 class TracedToolExecutor:
-    def __init__(self, inner: ToolExecutor, tracer: Tracer, capture_content: bool = False) -> None:
+    """Wraps both paths through the boundary, so an approved WRITE leaves a span
+    too (``approved=True``) — bind the ApprovalGate to this, not to the inner."""
+
+    def __init__(
+        self, inner: ApprovableExecutor, tracer: Tracer, capture_content: bool = False
+    ) -> None:
         self._inner, self._tracer, self._capture = inner, tracer, capture_content
 
     async def execute(self, call: ToolUseBlock, ctx: RunContext) -> ToolResult:
-        attributes = {"tool": call.name, **({"input": call.input} if self._capture else {})}
+        return await self._traced(self._inner.execute, call, approved=False, ctx=ctx)
+
+    async def execute_approved(self, call: ToolUseBlock, ctx: RunContext) -> ToolResult:
+        return await self._traced(self._inner.execute_approved, call, approved=True, ctx=ctx)
+
+    async def _traced(self, run, call: ToolUseBlock, approved: bool, ctx: RunContext) -> ToolResult:
+        attributes = {
+            "tool": call.name,
+            **({"approved": True} if approved else {}),
+            **({"input": call.input} if self._capture else {}),
+        }
         with self._tracer.span("tool.execute", **attributes) as span:
-            result = await self._inner.execute(call, ctx)
+            result = await run(call, ctx)
             span.set(is_error=result.is_error, parked=result.pending is not None)
             if self._capture:
                 span.set(output=result.content)

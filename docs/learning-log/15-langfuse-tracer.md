@@ -53,9 +53,32 @@ línea en el composition root.
   exactos del kwarg en v4, metadata es visible y seguro; el costo ya viaja
   calculado por nosotros (`cost_usd`, de `platform/cost.py`).
 
+## Addendum: la auditoría del primer run real (mismo día)
+
+El chat de consola mandó trazas de verdad y la auditoría contra la guía de
+buenas prácticas encontró — y cerró — tres huecos:
+
+1. **La ejecución aprobada era invisible.** El gate estaba bindeado al executor
+   crudo, así que el WRITE que un humano aprobó no dejaba span. Fix:
+   `TracedToolExecutor` ganó `execute_approved` (span `tool.execute` con
+   `approved=True`) y el gate ahora se bindea al decorado. Lección: *la
+   auditoría de trazas encuentra bugs de cableado que los tests unitarios no
+   ven* — cada decorador estaba bien; la composición no.
+2. **`usage_details`/`cost_details` nativos.** Los tokens iban solo a metadata
+   y `totalCost` quedaba vacío. Ahora las generations mapean
+   `input/output/cache_*` a `usage_details` (nombres estilo Anthropic, que la
+   tabla de precios reconoce) y `cost_usd` → `cost_details.total`. El
+   `agent.run` conserva sus totales en metadata.
+3. **Users/Sessions encendidos.** El span raíz propaga `principal_id` →
+   `user_id` y `session_id` vía `propagate_attributes` (verificado contra el
+   SDK instalado, inyectable para tests). En consola apareces como
+   `console-user`; por WhatsApp será el `wa_id` del cliente.
+
 ## Preguntas abiertas
 
 - `flush()`/`shutdown()` al apagar uvicorn (¿lifespan de FastAPI?). El SDK
   tiene su propio batching; verificar que nada se pierda en un deploy.
-- `usage_details`/`cost_details` nativos para que Langfuse calcule costo solo.
-- `propagate_attributes` para Sessions/Users de verdad.
+- Capturar contenido (input/output) en entornos de desarrollo + el campo
+  `environment` de Langfuse para separar dev de prod.
+- Trace-level input/output (`set_trace_io`) para que la lista de traces no se
+  vea muda.

@@ -79,13 +79,15 @@ def build_worker() -> tuple[Worker, Tracer]:
     pending = SqlitePendingActions(db) if db else InMemoryPendingActions()
     sessions = SqliteSessionStore(db) if db else InMemorySessionStore()
     gate = StoreApprovalGate(pending, clock)
-    executor = PolicyExecutor(registry, AllOf(CustomerScoped(), ConfirmWrites()), gate)
-    gate.bind(executor)
+    executor = TracedToolExecutor(
+        PolicyExecutor(registry, AllOf(CustomerScoped(), ConfirmWrites()), gate), tracer
+    )
+    gate.bind(executor)  # approved calls go through the traced boundary too
     loop = ReasoningLoop(
         TracedModelProvider(AnthropicModelProvider.from_settings(settings), tracer),
         InstructionsContext(clock),
         registry,
-        TracedToolExecutor(executor, tracer),
+        executor,
     )
     turns = TurnService(TracedAgentRunner(loop, tracer), WindowMemory(sessions), gate)
     worker = Worker(

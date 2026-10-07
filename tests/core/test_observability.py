@@ -104,6 +104,23 @@ async def test_tool_content_is_only_captured_when_asked():
         assert ("output" in tool.attributes) is capture
 
 
+async def test_approved_calls_leave_a_span_marked_approved():
+    class Approvable(Echo):
+        async def execute_approved(self, call: ToolUseBlock, ctx: RunContext) -> ToolResult:
+            return ToolResult(content="approved ran")
+
+    tracer = InMemoryTracer()
+    executor = TracedToolExecutor(Approvable(), tracer)
+    result = await executor.execute_approved(ToolUseBlock(id="1", name="t", input={"q": "x"}), CTX)
+
+    assert result.content == "approved ran"
+    (span,) = tracer.named("tool.execute")
+    assert span.attributes["approved"] is True and span.attributes["parked"] is False
+    # the normal path stays unmarked
+    await executor.execute(ToolUseBlock(id="2", name="t", input={"q": "x"}), CTX)
+    assert "approved" not in tracer.named("tool.execute")[1].attributes
+
+
 async def test_model_errors_are_recorded_on_the_span_and_still_raised():
     tracer = InMemoryTracer()
     with pytest.raises(ModelProviderError):

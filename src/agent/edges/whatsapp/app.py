@@ -97,13 +97,15 @@ def build(
     pending = SqlitePendingActions(db) if db else InMemoryPendingActions()
     sessions = SqliteSessionStore(db) if db else InMemorySessionStore()
     gate = StoreApprovalGate(pending, clock)
-    executor = PolicyExecutor(registry, AllOf(CustomerScoped(), ConfirmWrites()), gate)
-    gate.bind(executor)  # approvals re-run through the raw executor (execute_approved)
+    executor = TracedToolExecutor(
+        PolicyExecutor(registry, AllOf(CustomerScoped(), ConfirmWrites()), gate), tracer
+    )
+    gate.bind(executor)  # approved calls go through the traced boundary too
     loop = ReasoningLoop(
         TracedModelProvider(model or AnthropicModelProvider.from_settings(settings), tracer),
         InstructionsContext(clock),
         registry,
-        TracedToolExecutor(executor, tracer),
+        executor,
     )
     turns = TurnService(TracedAgentRunner(loop, tracer), WindowMemory(sessions), gate)
 

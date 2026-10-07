@@ -9,17 +9,25 @@ SDK keyword drift. Nesting follows the running task with a ``ContextVar``,
 like ``InMemoryTracer``.
 """
 
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, ExitStack, contextmanager
 from contextvars import ContextVar
 from typing import Any, Protocol
 
-from langfuse import Langfuse
+from langfuse import Langfuse, propagate_attributes
 
 from agent.platform.config import Settings
 
 _TYPES = {"agent.run": "agent", "model.generate": "generation", "tool.execute": "tool"}
 _DIRECT = ("input", "output")
+# Kernel usage attributes → Langfuse usage_details keys (Anthropic-style cache names,
+# so the pricing table recognizes them). Only generations get native usage.
+_USAGE = {
+    "input_tokens": "input",
+    "output_tokens": "output",
+    "cache_read_tokens": "cache_read_input_tokens",
+    "cache_write_tokens": "cache_creation_input_tokens",
+}
 
 
 class _Observation(Protocol):
@@ -48,9 +56,19 @@ class _LangfuseSpan:
         if not attributes:
             return
         fields: dict[str, Any] = {k: attributes[k] for k in _DIRECT if k in attributes}
-        if self._type == "generation" and "model" in attributes:
-            fields["model"] = attributes["model"]
-        rest = {k: v for k, v in attributes.items() if k not in fields}
+        consumed = set(fields)
+        if self._type == "generation":
+            if "model" in attributes:
+                fields["model"] = attributes["model"]
+                consumed.add("model")
+            usage = {to: attributes[k] for k, to in _USAGE.items() if k in attributes}
+            if usage:
+                fields["usage_details"] = usage
+                consumed.update(k for k in _USAGE if k in attributes)
+            if "cost_usd" in attributes:
+                fields["cost_details"] = {"total": attributes["cost_usd"]}
+                consumed.add("cost_usd")
+        rest = {k: v for k, v in attributes.items() if k not in consumed}
         if rest:
             self._metadata.update(rest)
             fields["metadata"] = dict(self._metadata)
@@ -58,8 +76,13 @@ class _LangfuseSpan:
 
 
 class LangfuseTracer:
-    def __init__(self, client: Langfuse) -> None:
+    def __init__(
+        self,
+        client: Langfuse,
+        propagate: Callable[..., AbstractContextManager[Any]] = propagate_attributes,
+    ) -> None:
         self._client = client
+        self._propagate = propagate  # injectable so tests can record it
         self._current: ContextVar[_Observation | None] = ContextVar(
             f"langfuse-span-{id(self)}", default=None
         )
@@ -79,18 +102,27 @@ class LangfuseTracer:
     def span(self, name: str, **attributes: Any) -> Iterator[_LangfuseSpan]:
         as_type = _TYPES.get(name, "span")
         parent = self._current.get()
-        observation = (parent or self._client).start_observation(name=name, as_type=as_type)
-        span = _LangfuseSpan(observation, as_type)
-        span.set(**attributes)
-        token = self._current.set(observation)
-        try:
-            yield span
-        except BaseException as e:
-            observation.update(level="ERROR", status_message=f"{type(e).__name__}: {e}")
-            raise
-        finally:
-            self._current.reset(token)
-            observation.end()
+        with ExitStack() as stack:
+            if parent is None:  # a root span names the trace's user and session
+                trace = {
+                    to: attributes[k]
+                    for k, to in (("principal_id", "user_id"), ("session_id", "session_id"))
+                    if attributes.get(k)
+                }
+                if trace:
+                    stack.enter_context(self._propagate(**trace))
+            observation = (parent or self._client).start_observation(name=name, as_type=as_type)
+            span = _LangfuseSpan(observation, as_type)
+            span.set(**attributes)
+            token = self._current.set(observation)
+            try:
+                yield span
+            except BaseException as e:
+                observation.update(level="ERROR", status_message=f"{type(e).__name__}: {e}")
+                raise
+            finally:
+                self._current.reset(token)
+                observation.end()
 
     def flush(self) -> None:
         """Send what's buffered. Call before a short-lived process exits."""
