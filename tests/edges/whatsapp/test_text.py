@@ -21,7 +21,7 @@ def result(text: str, stop: RunStop = RunStop.COMPLETED, pending=()) -> RunResul
     )
 
 
-def parked(name: str = "citas__create", **args) -> PendingAction:
+def parked(name: str = "pedidos__crear", **args) -> PendingAction:
     return PendingAction(
         id="pa-1",
         session_id="s1",
@@ -59,10 +59,10 @@ def test_a_completed_run_speaks_for_itself():
 
 def test_an_awaiting_approval_run_asks_with_the_exact_call():
     text = TextResponder().reply(
-        result("Puedo agendarla.", RunStop.AWAITING_APPROVAL, [parked(date="2026-10-13")])
+        result("Puedo pedirlo.", RunStop.AWAITING_APPROVAL, [parked(items="2 tacos al pastor")])
     )
-    assert text is not None and text.startswith("Puedo agendarla.")
-    assert "create" in text and "2026-10-13" in text
+    assert text is not None and text.startswith("Puedo pedirlo.")
+    assert "crear" in text and "2 tacos al pastor" in text
     assert "*sí*" in text and "*no*" in text
 
 

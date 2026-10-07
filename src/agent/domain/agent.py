@@ -49,10 +49,10 @@ class InboundEvent(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    event_id: str  # idempotency key from the channel (CV: message_id)
-    tenant_id: str  # whose data and config (CV: the sender, sender-scoped)
-    session_id: str  # the conversation thread (CV: channel_id)
-    principal_id: str  # who is acting (CV: sender_id)
+    event_id: str  # idempotency key from the channel (WhatsApp: the wamid)
+    tenant_id: str  # whose data and config (the sender: sender-scoped)
+    session_id: str  # the conversation thread (WhatsApp: the 1:1 chat)
+    principal_id: str  # who is acting (WhatsApp: the customer's wa_id)
     text: str
 
 

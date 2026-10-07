@@ -2,9 +2,10 @@
 
     uv run uvicorn agent.edges.whatsapp.app:create_app --factory --reload
 
-Everything is in memory (sessions, pending approvals, the queue): state is lost
-on restart. Tools: none yet. The first business connector brings real tools and
-the customer-scoping ``Policy`` that goes with them.
+Everything is in memory (sessions, pending approvals, the queue, the pedidos):
+state is lost on restart. Tools: the pedidos connector, under
+``AllOf(CustomerScoped(), ConfirmWrites())`` — a customer only touches their
+own pedidos, and placing one needs their yes in the chat.
 """
 
 from dataclasses import dataclass
@@ -14,10 +15,12 @@ from fastapi import FastAPI
 
 from agent.adapters.models.anthropic import AnthropicModelProvider
 from agent.adapters.stores.memory import InMemoryPendingActions, InMemorySessionStore
+from agent.adapters.whatsapp.pedidos import InMemoryPedidoStore, pedidos_tools
+from agent.adapters.whatsapp.policy import CustomerScoped
 from agent.core.approval import StoreApprovalGate
 from agent.core.context import InstructionsContext
 from agent.core.memory import WindowMemory
-from agent.core.policy import ConfirmWrites
+from agent.core.policy import AllOf, ConfirmWrites
 from agent.core.runner import ReasoningLoop
 from agent.core.tools import PolicyExecutor, StaticToolRegistry, Tool
 from agent.core.turns import TurnService
@@ -58,7 +61,8 @@ def build(
     tools: list[Tool] | None = None,
 ) -> WhatsAppApp:
     clock = clock or SystemClock()
-    tools = tools or []
+    if tools is None:  # the product's default connector; pass [] for a bare agent
+        tools = pedidos_tools(InMemoryPedidoStore(), clock)
     agents: dict[str, AgentSpec] = {}
     if settings.whatsapp_phone_number_id:
         agents[settings.whatsapp_phone_number_id] = AgentSpec(
@@ -74,7 +78,7 @@ def build(
 
     registry = StaticToolRegistry(tools)
     gate = StoreApprovalGate(InMemoryPendingActions(), clock)
-    executor = PolicyExecutor(registry, ConfirmWrites(), gate)
+    executor = PolicyExecutor(registry, AllOf(CustomerScoped(), ConfirmWrites()), gate)
     gate.bind(executor)
     loop = ReasoningLoop(
         model or AnthropicModelProvider.from_settings(settings),

@@ -113,28 +113,29 @@ reason → call a business tool → approve via reply → answer in the chat`. T
 kernel is untouched; this slice is a new product around it. Build order (each
 gets a learning-log note):
 
-1. **Webhook verification** — Meta's subscribe handshake is a `GET` with
+1. ✓ **Webhook verification** — Meta's subscribe handshake is a `GET` with
    `hub.mode` / `hub.verify_token` / `hub.challenge`; the ingress only has POST
    today. Small kernel extension: optional `verify` hook on `ChannelAdapter` +
    `GET /webhooks/{channel}/{hook}` route.
-2. **`Settings`** — `whatsapp_verify_token`, `whatsapp_app_secret` (signs
+2. ✓ **`Settings`** — `whatsapp_verify_token`, `whatsapp_app_secret` (signs
    webhooks), `whatsapp_access_token`, `whatsapp_phone_number_id`, Graph API
    version.
-3. **`edges/whatsapp/adapter.py`** — `WhatsAppAdapter`: validate
+3. ✓ **`edges/whatsapp/adapter.py`** — `WhatsAppAdapter`: validate
    `X-Hub-Signature-256` (HMAC-SHA256 of the raw body with the app secret);
    parse `entry[].changes[].value.messages[]` (ignore `statuses` and echoes);
    map `wa_id` → `principal_id` = `tenant_id`, chat → `session_id`; outbound via
    `POST graph.facebook.com/<ver>/{phone_number_id}/messages`.
-4. **`edges/whatsapp/responder.py` + replies + composition root** — text
+4. ✓ **`edges/whatsapp/responder.py` + replies + composition root** — text
    responder (WhatsApp formatting, 4096-char limit); approvals as text yes/no
    first, interactive reply buttons later.
-5. **The business domain + first real tools** — a small appointments/orders
-   domain backed by SQLite (`domain/<product>/`, tools in `adapters/`), one READ
-   + one WRITE tool, and the **customer-scoped `Policy`**
-   (`AllOf(CustomerScoped(...), ConfirmWrites())`) with negative tests. This is
-   where the sender-scoped isolation goal lands now.
-6. **SQLite stores** — `SessionStore` + `PendingActions` survive restarts (a
-   parked approval must outlive the process).
+5. ✓ **The business domain + first real tools** — the pedidos domain (a
+   restaurant: `domain/whatsapp/pedidos.py`), the connector
+   (`adapters/whatsapp/pedidos.py`: `pedidos__listar` READ + `pedidos__crear`
+   WRITE, in-memory store) and the **customer-scoped `Policy`**
+   (`AllOf(CustomerScoped(), ConfirmWrites())`) with negative tests. The
+   sender-scoped isolation goal, landed.
+6. **SQLite stores** — `SessionStore`, `PendingActions` and the `PedidoStore`
+   survive restarts (a parked approval must outlive the process).
 7. **Langfuse tracing adapter** — `adapters/tracing/langfuse.py` behind the
    existing `Tracer` port.
 8. **Run it for real** — Meta developer app + WhatsApp test number (free, up to
