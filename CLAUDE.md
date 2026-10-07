@@ -166,4 +166,5 @@ uv run ruff check . && uv run ruff format .    # lint + format
 uv run pytest -m live                          # real API, costs money
 uv run python evals/agent_loop/run.py --reps 3 # agent-loop evals, real API, costs money
 uv run uvicorn agent.edges.whatsapp.app:create_app --factory --reload  # webhook server
+uv run python scripts/chat.py                  # console chat vs the real agent, costs money
 ```
