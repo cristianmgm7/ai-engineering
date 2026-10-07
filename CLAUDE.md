@@ -134,8 +134,10 @@ gets a learning-log note):
    WRITE, in-memory store) and the **customer-scoped `Policy`**
    (`AllOf(CustomerScoped(), ConfirmWrites())`) with negative tests. The
    sender-scoped isolation goal, landed.
-6. **SQLite stores** — `SessionStore`, `PendingActions` and the `PedidoStore`
-   survive restarts (a parked approval must outlive the process).
+6. ✓ **SQLite stores** — `SessionStore`, `PendingActions` and the `PedidoStore`
+   survive restarts (a parked approval must outlive the process). `aiosqlite`
+   in `adapters/stores/sqlite.py` + `adapters/whatsapp/sqlite.py`; set
+   `DATABASE_PATH` to turn it on, unset = in-memory.
 7. **Langfuse tracing adapter** — `adapters/tracing/langfuse.py` behind the
    existing `Tracer` port.
 8. **Run it for real** — Meta developer app + WhatsApp test number (free, up to

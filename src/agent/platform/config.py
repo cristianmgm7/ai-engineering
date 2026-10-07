@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     whatsapp_phone_number_id: str | None = None  # the bot's sender id (= webhook :hook)
     whatsapp_graph_version: str = "v21.0"  # Graph API version in the send URL
 
+    # --- Storage (L3 · adapters/stores) ---
+    database_path: str | None = None  # SQLite file; unset = in-memory, state dies on restart
+
     # --- App ---
     log_level: str = "INFO"
 

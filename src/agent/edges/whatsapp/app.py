@@ -2,10 +2,11 @@
 
     uv run uvicorn agent.edges.whatsapp.app:create_app --factory --reload
 
-Everything is in memory (sessions, pending approvals, the queue, the pedidos):
-state is lost on restart. Tools: the pedidos connector, under
-``AllOf(CustomerScoped(), ConfirmWrites())`` — a customer only touches their
-own pedidos, and placing one needs their yes in the chat.
+With ``DATABASE_PATH`` set, sessions, parked approvals and pedidos live in
+SQLite and survive a restart; unset, everything is in memory (the queue always
+is). Tools: the pedidos connector, under ``AllOf(CustomerScoped(),
+ConfirmWrites())`` — a customer only touches their own pedidos, and placing
+one needs their yes in the chat.
 """
 
 from dataclasses import dataclass
@@ -15,8 +16,10 @@ from fastapi import FastAPI
 
 from agent.adapters.models.anthropic import AnthropicModelProvider
 from agent.adapters.stores.memory import InMemoryPendingActions, InMemorySessionStore
+from agent.adapters.stores.sqlite import SqlitePendingActions, SqliteSessionStore
 from agent.adapters.whatsapp.pedidos import InMemoryPedidoStore, pedidos_tools
 from agent.adapters.whatsapp.policy import CustomerScoped
+from agent.adapters.whatsapp.sqlite import SqlitePedidoStore
 from agent.core.approval import StoreApprovalGate
 from agent.core.context import InstructionsContext
 from agent.core.memory import WindowMemory
@@ -61,8 +64,10 @@ def build(
     tools: list[Tool] | None = None,
 ) -> WhatsAppApp:
     clock = clock or SystemClock()
+    db = settings.database_path
     if tools is None:  # the product's default connector; pass [] for a bare agent
-        tools = pedidos_tools(InMemoryPedidoStore(), clock)
+        pedido_store = SqlitePedidoStore(db) if db else InMemoryPedidoStore()
+        tools = pedidos_tools(pedido_store, clock)
     agents: dict[str, AgentSpec] = {}
     if settings.whatsapp_phone_number_id:
         agents[settings.whatsapp_phone_number_id] = AgentSpec(
@@ -77,7 +82,9 @@ def build(
     directory = StaticAgentDirectory(agents)
 
     registry = StaticToolRegistry(tools)
-    gate = StoreApprovalGate(InMemoryPendingActions(), clock)
+    pending = SqlitePendingActions(db) if db else InMemoryPendingActions()
+    sessions = SqliteSessionStore(db) if db else InMemorySessionStore()
+    gate = StoreApprovalGate(pending, clock)
     executor = PolicyExecutor(registry, AllOf(CustomerScoped(), ConfirmWrites()), gate)
     gate.bind(executor)
     loop = ReasoningLoop(
@@ -86,7 +93,7 @@ def build(
         registry,
         executor,
     )
-    turns = TurnService(loop, WindowMemory(InMemorySessionStore()), gate)
+    turns = TurnService(loop, WindowMemory(sessions), gate)
 
     verify_token = settings.whatsapp_verify_token
     app_secret = settings.whatsapp_app_secret
