@@ -11,8 +11,9 @@ EVENT = InboundEvent(event_id="m1", tenant_id="u1", session_id="c1", principal_i
 
 
 class FakeAdapter:
-    def __init__(self, outcome):
+    def __init__(self, outcome, challenge=None):
         self.outcome = outcome
+        self.challenge = challenge
         self.seen: list[InboundRequest] = []
 
     def parse_inbound(self, request: InboundRequest):
@@ -20,6 +21,12 @@ class FakeAdapter:
         if isinstance(self.outcome, Exception):
             raise self.outcome
         return self.outcome
+
+    def verify(self, request: InboundRequest):
+        self.seen.append(request)
+        if isinstance(self.challenge, Exception):
+            raise self.challenge
+        return self.challenge
 
     async def send(self, message) -> None:
         raise AssertionError("ingress never sends")
@@ -36,12 +43,19 @@ class FakeQueue:
         self.items.append(routed)
 
 
-async def post(adapter, queue, agents=("agent",), path="/webhooks/chat/agent"):
+def client(adapter, queue, agents=("agent",)):
     app = create_ingress({"chat": ChannelRoute(adapter, queue)}, set(agents))
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        return await client.post(path, content=b'{"x":1}', headers={"X-Signature": "abc"})
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+
+
+async def post(adapter, queue, agents=("agent",), path="/webhooks/chat/agent"):
+    async with client(adapter, queue, agents) as c:
+        return await c.post(path, content=b'{"x":1}', headers={"X-Signature": "abc"})
+
+
+async def get(adapter, path="/webhooks/chat/agent", params=None):
+    async with client(adapter, FakeQueue()) as c:
+        return await c.get(path, params=params or {})
 
 
 async def test_accepted_events_are_enqueued_with_the_raw_request():
@@ -80,3 +94,26 @@ async def test_unknown_agent_and_unknown_channel_are_404():
 async def test_a_queue_failure_is_a_503_so_the_channel_retries():
     routed = RoutedEvent(agent_key="agent", event=EVENT)
     assert (await post(FakeAdapter(routed), FakeQueue(fail=True))).status_code == 503
+
+
+# --- The subscription handshake (GET) --------------------------------------------
+
+
+async def test_handshake_echoes_the_challenge_as_plain_text():
+    adapter = FakeAdapter(None, challenge="162534")
+    response = await get(adapter, params={"hub.mode": "subscribe", "hub.challenge": "162534"})
+    assert response.status_code == 200 and response.text == "162534"
+    assert "text/plain" in response.headers["content-type"]
+    assert adapter.seen[0].query["hub.mode"] == "subscribe"
+    assert adapter.seen[0].path == {"hook": "agent"}
+
+
+async def test_handshake_rejections_keep_their_status():
+    adapter = FakeAdapter(None, challenge=Unauthorized("bad verify token"))
+    assert (await get(adapter)).status_code == 401
+
+
+async def test_handshake_is_404_for_channels_without_one_and_unknown_channels():
+    assert (await get(FakeAdapter(None, challenge=None))).status_code == 404
+    other = await get(FakeAdapter(None, challenge="x"), path="/webhooks/slack/agent")
+    assert other.status_code == 404

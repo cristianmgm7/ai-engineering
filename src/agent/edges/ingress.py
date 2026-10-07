@@ -8,6 +8,11 @@ adapter, check the agent exists, enqueue, answer fast. It never runs the agent.
 - 200 with ``ignored``: authentic but not for us; the channel shouldn't retry.
 - 503: the queue is unavailable, so the channel retries delivery instead of the
   message being dropped.
+
+``GET /webhooks/{channel}/{hook}``: the subscription handshake (Meta sends
+``hub.mode``/``hub.verify_token``/``hub.challenge`` before delivering anything).
+The adapter checks the token and the ingress echoes the challenge as plain text;
+404 for a channel without a handshake.
 """
 
 import logging
@@ -15,7 +20,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
 from agent.edges.channels import ChannelAdapter, InboundRequest, RejectedRequest, RoutedEvent
 
@@ -43,6 +48,26 @@ def create_ingress(routes: dict[str, ChannelRoute], agents: AgentLookup) -> Fast
     async def health() -> dict[str, bool]:
         return {"ok": True}
 
+    @app.get("/webhooks/{channel}/{hook}")
+    async def verify(channel: str, hook: str, request: Request) -> Response:
+        route = routes.get(channel)
+        if route is None:
+            return JSONResponse({"error": "unknown channel"}, status_code=404)
+
+        inbound = InboundRequest(
+            body=b"",
+            headers={k.lower(): v for k, v in request.headers.items()},
+            path={"hook": hook},
+            query=dict(request.query_params),
+        )
+        try:
+            challenge = route.adapter.verify(inbound)
+        except RejectedRequest as e:
+            return JSONResponse({"error": e.reason}, status_code=e.status_code)
+        if challenge is None:
+            return JSONResponse({"error": "no handshake for this channel"}, status_code=404)
+        return PlainTextResponse(challenge)
+
     @app.post("/webhooks/{channel}/{hook}")
     async def receive(channel: str, hook: str, request: Request) -> JSONResponse:
         route = routes.get(channel)
@@ -53,6 +78,7 @@ def create_ingress(routes: dict[str, ChannelRoute], agents: AgentLookup) -> Fast
             body=await request.body(),
             headers={k.lower(): v for k, v in request.headers.items()},
             path={"hook": hook},
+            query=dict(request.query_params),
         )
         try:
             routed = route.adapter.parse_inbound(inbound)

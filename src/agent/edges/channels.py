@@ -14,20 +14,21 @@ ingress answers 200 so the channel doesn't retry, and nothing runs.
 from collections.abc import Mapping
 from typing import Protocol
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from agent.domain.agent import InboundEvent
 
 
 class InboundRequest(BaseModel):
     """What the ingress hands a channel: the raw bytes (signatures are computed over
-    them), lower-cased headers and the path parameters."""
+    them), lower-cased headers, the path parameters and the query string."""
 
     model_config = ConfigDict(frozen=True)
 
     body: bytes
     headers: Mapping[str, str]
     path: Mapping[str, str]
+    query: Mapping[str, str] = Field(default_factory=dict)
 
 
 class RoutedEvent(BaseModel):
@@ -68,6 +69,13 @@ class ChannelAdapter(Protocol):
     def parse_inbound(self, request: InboundRequest) -> RoutedEvent | None:
         """Verify and normalize. Raises ``RejectedRequest``; ``None`` = authentic but
         ignored."""
+        ...
+
+    def verify(self, request: InboundRequest) -> str | None:
+        """Answer the channel's subscription handshake (``GET``, e.g. Meta's
+        ``hub.challenge``): the exact text to echo back. Raises ``RejectedRequest``
+        on a bad token; ``None`` = this channel has no handshake (the ingress 404s).
+        """
         ...
 
     async def send(self, message: OutboundMessage) -> None: ...
