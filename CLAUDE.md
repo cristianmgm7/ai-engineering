@@ -138,8 +138,10 @@ gets a learning-log note):
    survive restarts (a parked approval must outlive the process). `aiosqlite`
    in `adapters/stores/sqlite.py` + `adapters/whatsapp/sqlite.py`; set
    `DATABASE_PATH` to turn it on, unset = in-memory.
-7. **Langfuse tracing adapter** — `adapters/tracing/langfuse.py` behind the
-   existing `Tracer` port.
+7. ✓ **Langfuse tracing adapter** — `adapters/tracing/langfuse.py` behind the
+   existing `Tracer` port (SDK v4, names → observation types, metadata
+   accumulated per span). `LANGFUSE_PUBLIC_KEY`/`SECRET_KEY` turn it on; the
+   app now always wires the `Traced*` decorators (Noop when off).
 8. **Run it for real** — Meta developer app + WhatsApp test number (free, up to
    5 recipients), tunnel (ngrok/cloudflared), register the webhook. Mind the
    24-hour customer-service window (outside it only template messages send).

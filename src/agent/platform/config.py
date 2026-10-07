@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     # --- Storage (L3 · adapters/stores) ---
     database_path: str | None = None  # SQLite file; unset = in-memory, state dies on restart
 
+    # --- Langfuse (L3 · adapters/tracing). Optional: unset = tracing off ---
+    langfuse_public_key: SecretStr | None = None
+    langfuse_secret_key: SecretStr | None = None
+    langfuse_base_url: str = "https://cloud.langfuse.com"
+
     # --- App ---
     log_level: str = "INFO"
 

@@ -23,6 +23,11 @@ from agent.adapters.whatsapp.sqlite import SqlitePedidoStore
 from agent.core.approval import StoreApprovalGate
 from agent.core.context import InstructionsContext
 from agent.core.memory import WindowMemory
+from agent.core.observability import (
+    TracedAgentRunner,
+    TracedModelProvider,
+    TracedToolExecutor,
+)
 from agent.core.policy import AllOf, ConfirmWrites
 from agent.core.runner import ReasoningLoop
 from agent.core.tools import PolicyExecutor, StaticToolRegistry, Tool
@@ -36,6 +41,7 @@ from agent.edges.worker import InProcessQueue, StaticAgentDirectory, Worker
 from agent.platform.clock import Clock, SystemClock
 from agent.platform.config import Settings, get_settings
 from agent.platform.model import ModelProvider
+from agent.platform.tracing import NoopTracer, Tracer
 
 INSTRUCTIONS = """\
 You are a business assistant on WhatsApp. Customers write to you in a chat.
@@ -81,19 +87,25 @@ def build(
         )
     directory = StaticAgentDirectory(agents)
 
+    tracer: Tracer = NoopTracer()
+    if settings.langfuse_public_key and settings.langfuse_secret_key:
+        from agent.adapters.tracing.langfuse import LangfuseTracer  # imports the SDK
+
+        tracer = LangfuseTracer.from_settings(settings)
+
     registry = StaticToolRegistry(tools)
     pending = SqlitePendingActions(db) if db else InMemoryPendingActions()
     sessions = SqliteSessionStore(db) if db else InMemorySessionStore()
     gate = StoreApprovalGate(pending, clock)
     executor = PolicyExecutor(registry, AllOf(CustomerScoped(), ConfirmWrites()), gate)
-    gate.bind(executor)
+    gate.bind(executor)  # approvals re-run through the raw executor (execute_approved)
     loop = ReasoningLoop(
-        model or AnthropicModelProvider.from_settings(settings),
+        TracedModelProvider(model or AnthropicModelProvider.from_settings(settings), tracer),
         InstructionsContext(clock),
         registry,
-        executor,
+        TracedToolExecutor(executor, tracer),
     )
-    turns = TurnService(loop, WindowMemory(sessions), gate)
+    turns = TurnService(TracedAgentRunner(loop, tracer), WindowMemory(sessions), gate)
 
     verify_token = settings.whatsapp_verify_token
     app_secret = settings.whatsapp_app_secret
