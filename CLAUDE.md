@@ -143,8 +143,9 @@ gets a learning-log note):
    accumulated per span). `LANGFUSE_PUBLIC_KEY`/`SECRET_KEY` turn it on; the
    app now always wires the `Traced*` decorators (Noop when off).
 8. **Run it for real** — Meta developer app + WhatsApp test number (free, up to
-   5 recipients), tunnel (ngrok/cloudflared), register the webhook. Mind the
-   24-hour customer-service window (outside it only template messages send).
+   5 recipients), tunnel (ngrok/cloudflared), register the webhook. Step by
+   step: `docs/run-whatsapp.md`. Mind the 24-hour customer-service window
+   (irrelevant while the bot only replies).
 
 ## How we work
 
