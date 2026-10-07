@@ -116,6 +116,7 @@ async def test_approved_calls_leave_a_span_marked_approved():
     assert result.content == "approved ran"
     (span,) = tracer.named("tool.execute")
     assert span.attributes["approved"] is True and span.attributes["parked"] is False
+    assert span.attributes["principal_id"] == "u" and span.attributes["session_id"] == "s"
     # the normal path stays unmarked
     await executor.execute(ToolUseBlock(id="2", name="t", input={"q": "x"}), CTX)
     assert "approved" not in tracer.named("tool.execute")[1].attributes

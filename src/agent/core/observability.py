@@ -74,6 +74,10 @@ class TracedToolExecutor:
     async def _traced(self, run, call: ToolUseBlock, approved: bool, ctx: RunContext) -> ToolResult:
         attributes = {
             "tool": call.name,
+            # who and where, so an approved call that runs outside an agent.run
+            # still forms an attributed trace of its own
+            "principal_id": ctx.principal_id,
+            "session_id": ctx.session_id,
             **({"approved": True} if approved else {}),
             **({"input": call.input} if self._capture else {}),
         }
