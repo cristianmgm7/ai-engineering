@@ -145,7 +145,14 @@ gets a learning-log note):
 8. **Run it for real** — Meta developer app + WhatsApp test number (free, up to
    5 recipients), tunnel (ngrok/cloudflared), register the webhook. Step by
    step: `docs/run-whatsapp.md`. Mind the 24-hour customer-service window
-   (irrelevant while the bot only replies).
+   (irrelevant while the bot only replies). Blocked on Meta's developer
+   registration (SMS code); the console chat (`scripts/chat.py`) proves the
+   flow meanwhile.
+9. **Deploy** — Dockerfile (multi-stage uv, non-root, healthcheck) +
+   docker-compose (volume for SQLite at `/data/agent.db`); logging configured
+   from `LOG_LEVEL` and a lifespan shutdown that drains the queue, flushes
+   Langfuse and closes the outbound client. Destination TBD (leaning AWS EC2
+   to learn it); deployed fail-closed until the Meta credentials exist.
 
 ## How we work
 
@@ -167,4 +174,5 @@ uv run pytest -m live                          # real API, costs money
 uv run python evals/agent_loop/run.py --reps 3 # agent-loop evals, real API, costs money
 uv run uvicorn agent.edges.whatsapp.app:create_app --factory --reload  # webhook server
 uv run python scripts/chat.py                  # console chat vs the real agent, costs money
+docker compose up --build                      # the server in a container, SQLite on a volume
 ```

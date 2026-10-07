@@ -9,6 +9,7 @@ ConfirmWrites())`` — a customer only touches their own pedidos, and placing
 one needs their yes in the chat.
 """
 
+import logging
 from dataclasses import dataclass
 
 import httpx
@@ -112,19 +113,36 @@ def build(
     verify_token = settings.whatsapp_verify_token
     app_secret = settings.whatsapp_app_secret
     access_token = settings.whatsapp_access_token
+    outbound = http or httpx.AsyncClient(timeout=20.0)
     adapter = WhatsAppAdapter(
         verify_token=verify_token.get_secret_value() if verify_token else None,
         app_secret=app_secret.get_secret_value() if app_secret else None,
-        http=http or httpx.AsyncClient(timeout=20.0),
+        http=outbound,
         access_token=access_token.get_secret_value() if access_token else None,
         graph_version=settings.whatsapp_graph_version,
     )
     worker = Worker(directory, turns, gate, YesNoReplies(), TextResponder(), adapter)
     queue = InProcessQueue(worker)
-    http_app = create_ingress({"whatsapp": ChannelRoute(adapter, queue)}, directory)
+
+    async def shutdown() -> None:
+        """Drain in-flight turns, flush tracing, close the outbound client."""
+        await queue.drain()
+        flush = getattr(tracer, "flush", None)
+        if flush:
+            flush()
+        await outbound.aclose()
+
+    http_app = create_ingress(
+        {"whatsapp": ChannelRoute(adapter, queue)}, directory, on_shutdown=shutdown
+    )
     return WhatsAppApp(http_app=http_app, queue=queue)
 
 
 def create_app() -> FastAPI:
     """The uvicorn factory."""
-    return build(get_settings()).http_app
+    settings = get_settings()
+    logging.basicConfig(
+        level=settings.log_level.upper(),
+        format="%(asctime)s %(levelname)s %(name)s · %(message)s",
+    )
+    return build(settings).http_app

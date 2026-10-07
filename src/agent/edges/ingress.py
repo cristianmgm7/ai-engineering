@@ -16,6 +16,8 @@ The adapter checks the token and the ingress echoes the challenge as plain text;
 """
 
 import logging
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -41,8 +43,20 @@ class ChannelRoute:
     queue: EventQueue
 
 
-def create_ingress(routes: dict[str, ChannelRoute], agents: AgentLookup) -> FastAPI:
-    app = FastAPI(title="agent ingress", docs_url=None, redoc_url=None)
+def create_ingress(
+    routes: dict[str, ChannelRoute],
+    agents: AgentLookup,
+    on_shutdown: Callable[[], Awaitable[None]] | None = None,
+) -> FastAPI:
+    """``on_shutdown`` runs when the server stops: flush tracing, close clients."""
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        yield
+        if on_shutdown is not None:
+            await on_shutdown()
+
+    app = FastAPI(title="agent ingress", docs_url=None, redoc_url=None, lifespan=lifespan)
 
     @app.get("/health")
     async def health() -> dict[str, bool]:

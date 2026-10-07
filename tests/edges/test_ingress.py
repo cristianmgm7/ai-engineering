@@ -117,3 +117,22 @@ async def test_handshake_is_404_for_channels_without_one_and_unknown_channels():
     assert (await get(FakeAdapter(None, challenge=None))).status_code == 404
     other = await get(FakeAdapter(None, challenge="x"), path="/webhooks/slack/agent")
     assert other.status_code == 404
+
+
+# --- Lifespan ---------------------------------------------------------------------
+
+
+def test_on_shutdown_runs_when_the_server_stops():
+    from fastapi.testclient import TestClient
+
+    stopped = []
+
+    async def on_shutdown() -> None:
+        stopped.append(True)
+
+    app = create_ingress(
+        {"chat": ChannelRoute(FakeAdapter(None), FakeQueue())}, {"agent"}, on_shutdown=on_shutdown
+    )
+    with TestClient(app):  # enter = startup, exit = shutdown
+        assert stopped == []
+    assert stopped == [True]
