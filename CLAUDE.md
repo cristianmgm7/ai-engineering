@@ -148,11 +148,13 @@ gets a learning-log note):
    (irrelevant while the bot only replies). Blocked on Meta's developer
    registration (SMS code); the console chat (`scripts/chat.py`) proves the
    flow meanwhile.
-9. **Deploy** — Dockerfile (multi-stage uv, non-root, healthcheck) +
+9. ✓ **Deploy** — Dockerfile (multi-stage uv, non-root, healthcheck) +
    docker-compose (volume for SQLite at `/data/agent.db`); logging configured
    from `LOG_LEVEL` and a lifespan shutdown that drains the queue, flushes
-   Langfuse and closes the outbound client. Destination TBD (leaning AWS EC2
-   to learn it); deployed fail-closed until the Meta credentials exist.
+   Langfuse and closes the outbound client. Running on AWS EC2 (t3.micro,
+   IMDSv2, encrypted gp3, Elastic IP) behind a Caddy sidecar that owns the
+   TLS Meta requires — deployed fail-closed until the Meta credentials exist.
+   Runbook: `docs/deploy-ec2.md`.
 
 ## How we work
 
