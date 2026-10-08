@@ -119,17 +119,48 @@ curl -s "https://graph.facebook.com/v21.0/<APP_ID>/subscriptions?access_token=<A
 3. Si configuraste Langfuse: abre la traza (`agent.run` → `model.generate` /
    `tool.execute`) y audítala — ¿se entiende qué contexto tuvo el agente?
 
-## El token caduca (~24 h)
+## El token: temporal vs. permanente
 
-El token temporal de la consola dura ~24 h. Recibir mensajes no lo usa (eso
-firma con el App Secret); **responder sí**. Al caducar los mensajes siguen
-llegando pero el envío falla con 401 / error 190. Opciones:
+El token temporal de la consola ("Generar token" en Paso 1) dura ~24 h. Recibir
+mensajes no lo usa (eso firma con el App Secret); **responder sí**. Al caducar
+los mensajes siguen llegando pero el envío falla con 401 / error 190. Sirve
+para la primera prueba; para dejar el bot corriendo usa el permanente.
 
-- **Rápido**: "Generar token" en Paso 1 → pegarlo en el `.env` → repetir el
-  comando de la sección 3.
-- **Permanente**: token de **System User** (Business Settings → Usuarios →
-  Usuarios del sistema), con la cuenta de WhatsApp asignada como activo y los
-  permisos `whatsapp_business_messaging` y `whatsapp_business_management`.
+### Token permanente (System User) — el estándar
+
+Un token de **System User** no caduca, solo permite lo que le asignes y se
+revoca cuando quieras. Se crea una vez:
+
+1. [business.facebook.com](https://business.facebook.com) → **Configuración →
+   Usuarios → Usuarios del sistema → Agregar**. Nombre `agent-bot`, rol
+   **Employee** (mínimo privilegio). Meta pide aceptar su política de no
+   discriminación publicitaria, aunque no hagas anuncios.
+2. **Asignar activos** (dos, ambos con acceso *parcial*):
+   - **Cuentas de WhatsApp** → tu cuenta → permiso **Mensajes** (Meta añade
+     solo "Números de teléfono (solo ver)").
+   - **Apps** → tu app → **Desarrollar app**. Sin esto el generador de tokens
+     dice "No hay permisos disponibles" (si ya la asignaste y lo sigue
+     diciendo, recarga la página: queda cacheado).
+3. **Generar token** → app → caducidad **Nunca** → permiso
+   `whatsapp_business_messaging` → **Generar token**. Se muestra **una sola
+   vez**: cópialo con el botón (nunca por el chat).
+4. Al `.env` local sin mostrarlo, y al servidor (sección 3):
+
+   ```bash
+   sed -i '' -E "s|^WHATSAPP_ACCESS_TOKEN=.*|WHATSAPP_ACCESS_TOKEN=$(pbpaste)|" .env && pbcopy </dev/null
+   ```
+
+5. Comprobar desde el servidor que es el bueno (`type: SYSTEM_USER`,
+   `expires_at: 0`, `is_valid: true`):
+
+   ```bash
+   curl -s -H "Authorization: Bearer $TOKEN" \
+     "https://graph.facebook.com/v21.0/debug_token?input_token=$TOKEN"
+   ```
+
+Revocar: en la misma pantalla del usuario → **Revocar tokens**. Solo pide el
+permiso de mensajería; si algún día hace falta administrar (suscribir apps,
+leer números) usa el token temporal o añade `whatsapp_business_management`.
 
 ## Si algo falla
 
@@ -140,7 +171,7 @@ llegando pero el envío falla con 401 / error 190. Opciones:
 | 401 en los POST de Meta | `WHATSAPP_APP_SECRET` equivocado (la firma no cuadra) |
 | Valores raros / longitudes enormes | comentarios al final de línea copiados de `.env.example` |
 | El bot no contesta | ¿tu número está entre los destinatarios de prueba? ¿token caducado? mira los logs |
-| `send` falla con 401/190 | el token temporal caducó (24 h): regenéralo |
+| `send` falla con 401/190 | el token temporal caducó (24 h): usa el permanente (System User) |
 | SSH da timeout | cambió tu IP de casa: actualiza el security group |
 | Responde en frío tras reinicio sin memoria | sin `DATABASE_PATH` el estado muere con el proceso |
 
