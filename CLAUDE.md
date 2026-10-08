@@ -113,33 +113,48 @@ reason → call a business tool → approve via reply → answer in the chat`. T
 kernel is untouched; this slice is a new product around it. Build order (each
 gets a learning-log note):
 
-1. **Webhook verification** — Meta's subscribe handshake is a `GET` with
+1. ✓ **Webhook verification** — Meta's subscribe handshake is a `GET` with
    `hub.mode` / `hub.verify_token` / `hub.challenge`; the ingress only has POST
    today. Small kernel extension: optional `verify` hook on `ChannelAdapter` +
    `GET /webhooks/{channel}/{hook}` route.
-2. **`Settings`** — `whatsapp_verify_token`, `whatsapp_app_secret` (signs
+2. ✓ **`Settings`** — `whatsapp_verify_token`, `whatsapp_app_secret` (signs
    webhooks), `whatsapp_access_token`, `whatsapp_phone_number_id`, Graph API
    version.
-3. **`edges/whatsapp/adapter.py`** — `WhatsAppAdapter`: validate
+3. ✓ **`edges/whatsapp/adapter.py`** — `WhatsAppAdapter`: validate
    `X-Hub-Signature-256` (HMAC-SHA256 of the raw body with the app secret);
    parse `entry[].changes[].value.messages[]` (ignore `statuses` and echoes);
    map `wa_id` → `principal_id` = `tenant_id`, chat → `session_id`; outbound via
    `POST graph.facebook.com/<ver>/{phone_number_id}/messages`.
-4. **`edges/whatsapp/responder.py` + replies + composition root** — text
+4. ✓ **`edges/whatsapp/responder.py` + replies + composition root** — text
    responder (WhatsApp formatting, 4096-char limit); approvals as text yes/no
    first, interactive reply buttons later.
-5. **The business domain + first real tools** — a small appointments/orders
-   domain backed by SQLite (`domain/<product>/`, tools in `adapters/`), one READ
-   + one WRITE tool, and the **customer-scoped `Policy`**
-   (`AllOf(CustomerScoped(...), ConfirmWrites())`) with negative tests. This is
-   where the sender-scoped isolation goal lands now.
-6. **SQLite stores** — `SessionStore` + `PendingActions` survive restarts (a
-   parked approval must outlive the process).
-7. **Langfuse tracing adapter** — `adapters/tracing/langfuse.py` behind the
-   existing `Tracer` port.
+5. ✓ **The business domain + first real tools** — the pedidos domain (a
+   restaurant: `domain/whatsapp/pedidos.py`), the connector
+   (`adapters/whatsapp/pedidos.py`: `pedidos__listar` READ + `pedidos__crear`
+   WRITE, in-memory store) and the **customer-scoped `Policy`**
+   (`AllOf(CustomerScoped(), ConfirmWrites())`) with negative tests. The
+   sender-scoped isolation goal, landed.
+6. ✓ **SQLite stores** — `SessionStore`, `PendingActions` and the `PedidoStore`
+   survive restarts (a parked approval must outlive the process). `aiosqlite`
+   in `adapters/stores/sqlite.py` + `adapters/whatsapp/sqlite.py`; set
+   `DATABASE_PATH` to turn it on, unset = in-memory.
+7. ✓ **Langfuse tracing adapter** — `adapters/tracing/langfuse.py` behind the
+   existing `Tracer` port (SDK v4, names → observation types, metadata
+   accumulated per span). `LANGFUSE_PUBLIC_KEY`/`SECRET_KEY` turn it on; the
+   app now always wires the `Traced*` decorators (Noop when off).
 8. **Run it for real** — Meta developer app + WhatsApp test number (free, up to
-   5 recipients), tunnel (ngrok/cloudflared), register the webhook. Mind the
-   24-hour customer-service window (outside it only template messages send).
+   5 recipients), tunnel (ngrok/cloudflared), register the webhook. Step by
+   step: `docs/run-whatsapp.md`. Mind the 24-hour customer-service window
+   (irrelevant while the bot only replies). Blocked on Meta's developer
+   registration (SMS code); the console chat (`scripts/chat.py`) proves the
+   flow meanwhile.
+9. ✓ **Deploy** — Dockerfile (multi-stage uv, non-root, healthcheck) +
+   docker-compose (volume for SQLite at `/data/agent.db`); logging configured
+   from `LOG_LEVEL` and a lifespan shutdown that drains the queue, flushes
+   Langfuse and closes the outbound client. Running on AWS EC2 (t3.micro,
+   IMDSv2, encrypted gp3, Elastic IP) behind a Caddy sidecar that owns the
+   TLS Meta requires — deployed fail-closed until the Meta credentials exist.
+   Runbook: `docs/deploy-ec2.md`.
 
 ## How we work
 
@@ -159,4 +174,7 @@ uv run pytest                                  # tests + evals
 uv run ruff check . && uv run ruff format .    # lint + format
 uv run pytest -m live                          # real API, costs money
 uv run python evals/agent_loop/run.py --reps 3 # agent-loop evals, real API, costs money
+uv run uvicorn agent.edges.whatsapp.app:create_app --factory --reload  # webhook server
+uv run python scripts/chat.py                  # console chat vs the real agent, costs money
+docker compose up --build                      # the server in a container, SQLite on a volume
 ```

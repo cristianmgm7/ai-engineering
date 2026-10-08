@@ -30,6 +30,21 @@ class Settings(BaseSettings):
     agent_max_steps: int = 8  # default RunLimits.max_steps
     agent_max_tokens: int = 16000  # default RunLimits.max_tokens
 
+    # --- WhatsApp channel (L4 · edges/whatsapp). Optional: unset = fail closed ---
+    whatsapp_verify_token: SecretStr | None = None  # Meta's GET subscription handshake
+    whatsapp_app_secret: SecretStr | None = None  # signs webhooks (X-Hub-Signature-256)
+    whatsapp_access_token: SecretStr | None = None  # Bearer for the Graph API
+    whatsapp_phone_number_id: str | None = None  # the bot's sender id (= webhook :hook)
+    whatsapp_graph_version: str = "v21.0"  # Graph API version in the send URL
+
+    # --- Storage (L3 · adapters/stores) ---
+    database_path: str | None = None  # SQLite file; unset = in-memory, state dies on restart
+
+    # --- Langfuse (L3 · adapters/tracing). Optional: unset = tracing off ---
+    langfuse_public_key: SecretStr | None = None
+    langfuse_secret_key: SecretStr | None = None
+    langfuse_base_url: str = "https://cloud.langfuse.com"
+
     # --- App ---
     log_level: str = "INFO"
 

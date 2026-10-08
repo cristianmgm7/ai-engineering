@@ -1,0 +1,16 @@
+# Local/VPS run: `docker compose up --build`. Secrets come from .env (git-ignored);
+# pedidos, sesiones y aprobaciones persisten en el volumen `agent-data`.
+services:
+  agent:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      DATABASE_PATH: /data/agent.db
+    volumes:
+      - agent-data:/data
+    restart: unless-stopped
+
+volumes:
+  agent-data:

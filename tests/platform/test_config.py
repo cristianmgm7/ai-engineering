@@ -31,8 +31,19 @@ def test_defaults_applied(monkeypatch):
     assert settings.log_level == "INFO"
 
 
+def test_whatsapp_is_unset_by_default_so_the_webhook_fails_closed(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    settings = Settings(_env_file=None)
+    assert settings.whatsapp_verify_token is None
+    assert settings.whatsapp_app_secret is None
+    assert settings.whatsapp_access_token is None
+    assert settings.whatsapp_phone_number_id is None
+    assert settings.whatsapp_graph_version  # non-empty default
+
+
 def test_secret_not_leaked(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-supersecret")
+    monkeypatch.setenv("WHATSAPP_APP_SECRET", "meta-supersecret")
     settings = Settings(_env_file=None)
     assert "supersecret" not in repr(settings)
     assert "supersecret" not in str(settings)

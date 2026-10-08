@@ -17,7 +17,16 @@ PKG = Path(__file__).resolve().parents[1] / "src" / "agent"
 # evaluation/ is cross-cutting and outermost: it may import everything, nothing imports it.
 LAYER_RANK = {"platform": 0, "domain": 1, "core": 2, "adapters": 3, "edges": 4, "evaluation": 5}
 INNER_LAYERS = {"platform", "domain", "core"}
-VENDOR_OR_WEB = {"anthropic", "fastapi", "httpx", "httpx2", "uvicorn", "langfuse", "sqlalchemy"}
+VENDOR_OR_WEB = {
+    "anthropic",
+    "fastapi",
+    "httpx",
+    "httpx2",
+    "uvicorn",
+    "langfuse",
+    "sqlalchemy",
+    "aiosqlite",
+}
 PRODUCT = "whatsapp"
 
 

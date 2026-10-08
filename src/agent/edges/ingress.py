@@ -8,14 +8,21 @@ adapter, check the agent exists, enqueue, answer fast. It never runs the agent.
 - 200 with ``ignored``: authentic but not for us; the channel shouldn't retry.
 - 503: the queue is unavailable, so the channel retries delivery instead of the
   message being dropped.
+
+``GET /webhooks/{channel}/{hook}``: the subscription handshake (Meta sends
+``hub.mode``/``hub.verify_token``/``hub.challenge`` before delivering anything).
+The adapter checks the token and the ingress echoes the challenge as plain text;
+404 for a channel without a handshake.
 """
 
 import logging
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Protocol
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
 from agent.edges.channels import ChannelAdapter, InboundRequest, RejectedRequest, RoutedEvent
 
@@ -36,12 +43,44 @@ class ChannelRoute:
     queue: EventQueue
 
 
-def create_ingress(routes: dict[str, ChannelRoute], agents: AgentLookup) -> FastAPI:
-    app = FastAPI(title="agent ingress", docs_url=None, redoc_url=None)
+def create_ingress(
+    routes: dict[str, ChannelRoute],
+    agents: AgentLookup,
+    on_shutdown: Callable[[], Awaitable[None]] | None = None,
+) -> FastAPI:
+    """``on_shutdown`` runs when the server stops: flush tracing, close clients."""
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        yield
+        if on_shutdown is not None:
+            await on_shutdown()
+
+    app = FastAPI(title="agent ingress", docs_url=None, redoc_url=None, lifespan=lifespan)
 
     @app.get("/health")
     async def health() -> dict[str, bool]:
         return {"ok": True}
+
+    @app.get("/webhooks/{channel}/{hook}")
+    async def verify(channel: str, hook: str, request: Request) -> Response:
+        route = routes.get(channel)
+        if route is None:
+            return JSONResponse({"error": "unknown channel"}, status_code=404)
+
+        inbound = InboundRequest(
+            body=b"",
+            headers={k.lower(): v for k, v in request.headers.items()},
+            path={"hook": hook},
+            query=dict(request.query_params),
+        )
+        try:
+            challenge = route.adapter.verify(inbound)
+        except RejectedRequest as e:
+            return JSONResponse({"error": e.reason}, status_code=e.status_code)
+        if challenge is None:
+            return JSONResponse({"error": "no handshake for this channel"}, status_code=404)
+        return PlainTextResponse(challenge)
 
     @app.post("/webhooks/{channel}/{hook}")
     async def receive(channel: str, hook: str, request: Request) -> JSONResponse:
@@ -53,6 +92,7 @@ def create_ingress(routes: dict[str, ChannelRoute], agents: AgentLookup) -> Fast
             body=await request.body(),
             headers={k.lower(): v for k, v in request.headers.items()},
             path={"hook": hook},
+            query=dict(request.query_params),
         )
         try:
             routed = route.adapter.parse_inbound(inbound)
