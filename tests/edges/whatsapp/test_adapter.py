@@ -7,7 +7,13 @@ import json
 import httpx
 import pytest
 
-from agent.edges.channels import BadRequest, InboundRequest, OutboundMessage, Unauthorized
+from agent.edges.channels import (
+    BadRequest,
+    InboundRequest,
+    OutboundMessage,
+    SendFailed,
+    Unauthorized,
+)
 from agent.edges.whatsapp.adapter import WhatsAppAdapter
 
 VERIFY_TOKEN = "verify-me"
@@ -147,3 +153,26 @@ async def test_send_posts_to_the_graph_api_and_quotes_the_reply():
 async def test_send_without_configuration_raises():
     with pytest.raises(RuntimeError):
         await adapter().send(OutboundMessage(agent_key=HOOK, session_id=WA_ID, text="hola"))
+
+
+async def test_a_refused_send_raises_with_metas_own_explanation():
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = {"error": {"code": 190, "message": "Error validating access token"}}
+        return httpx.Response(401, json=body)
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    out = adapter(http=http, access_token="expired", api_base_url="https://graph.test")
+    with pytest.raises(SendFailed) as failure:
+        await out.send(OutboundMessage(agent_key=HOOK, session_id=WA_ID, text="hola"))
+    assert failure.value.status_code == 401
+    assert "190" in failure.value.detail and "access token" in failure.value.detail
+
+
+async def test_a_refused_send_without_a_json_body_still_explains_itself():
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(502, text="bad gateway"))
+    )
+    out = adapter(http=http, access_token="t", api_base_url="https://graph.test")
+    with pytest.raises(SendFailed) as failure:
+        await out.send(OutboundMessage(agent_key=HOOK, session_id=WA_ID, text="hola"))
+    assert failure.value.detail == "bad gateway"

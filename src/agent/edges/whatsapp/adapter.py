@@ -28,6 +28,7 @@ from agent.edges.channels import (
     InboundRequest,
     OutboundMessage,
     RoutedEvent,
+    SendFailed,
     Unauthorized,
 )
 
@@ -123,7 +124,17 @@ class WhatsAppAdapter:
             json=payload,
             headers={"Authorization": f"Bearer {self._access_token}"},
         )
-        response.raise_for_status()
+        if response.is_error:
+            raise SendFailed(response.status_code, _graph_error(response))
+
+
+def _graph_error(response: httpx.Response) -> str:
+    """Meta's own explanation of a failed send (``error.code`` + ``error.message``)."""
+    try:
+        error = response.json()["error"]
+        return f"{error['code']}: {error['message']}"
+    except (ValueError, KeyError, TypeError):
+        return response.text[:200] or response.reason_phrase
 
 
 def _json(body: bytes) -> dict[str, Any]:
