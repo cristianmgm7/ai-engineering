@@ -16,11 +16,11 @@ import httpx
 from fastapi import FastAPI
 
 from agent.adapters.models.anthropic import AnthropicModelProvider
+from agent.adapters.restaurante.pedidos import InMemoryPedidoStore, pedidos_tools
+from agent.adapters.restaurante.policy import CustomerScoped
+from agent.adapters.restaurante.sqlite import SqlitePedidoStore
 from agent.adapters.stores.memory import InMemoryPendingActions, InMemorySessionStore
 from agent.adapters.stores.sqlite import SqlitePendingActions, SqliteSessionStore
-from agent.adapters.whatsapp.pedidos import InMemoryPedidoStore, pedidos_tools
-from agent.adapters.whatsapp.policy import CustomerScoped
-from agent.adapters.whatsapp.sqlite import SqlitePedidoStore
 from agent.core.approval import StoreApprovalGate
 from agent.core.context import InstructionsContext
 from agent.core.memory import WindowMemory

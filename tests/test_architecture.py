@@ -4,8 +4,12 @@
    L1 domain → L0 platform. A module may import its own layer or an inner one.
 2. The inner layers (platform, domain, core) import no vendor SDK or web framework.
    Those live in adapters/ and edges/, behind ports.
-3. Kernel code never imports product code. Product code lives in a product
-   subpackage (``whatsapp``), so the kernel can be lifted into another project as is.
+3. Kernel code never imports product code. Product code lives in a subpackage named
+   after what it is: a *channel* (``whatsapp``: how people reach the bot) or a
+   *business* (``restaurante``: what the bot does for them). The kernel can be lifted
+   into another project as is.
+4. The business never imports a channel. That is what lets the same restaurant sit
+   behind another channel (Telegram, a web chat) without touching a line of it.
 """
 
 import ast
@@ -27,7 +31,9 @@ VENDOR_OR_WEB = {
     "sqlalchemy",
     "aiosqlite",
 }
-PRODUCT = "whatsapp"
+CHANNELS = {"whatsapp"}  # how people reach the bot (edges/ only, plus its config)
+BUSINESSES = {"restaurante"}  # what the bot does for them (domain/ + adapters/)
+PRODUCT = CHANNELS | BUSINESSES
 
 
 def _imports(path: Path) -> set[str]:
@@ -67,15 +73,28 @@ def test_inner_layers_import_no_vendor_or_web_code(layer: str, path: Path):
     assert not bad, f"{_id(path)} ({layer}) imports {bad}"
 
 
+def _is_product(path: Path) -> bool:
+    return bool(PRODUCT & set(path.relative_to(PKG).parts))
+
+
 @pytest.mark.parametrize(
-    ("layer", "path"),
-    [(lay, p) for lay, p in _modules() if PRODUCT not in p.relative_to(PKG).parts],
-    ids=_id,
+    ("layer", "path"), [(lay, p) for lay, p in _modules() if not _is_product(p)], ids=_id
 )
 def test_kernel_never_imports_product_code(layer: str, path: Path):
-    bad = {n for n in _imports(path) if PRODUCT in n.split(".")}
+    bad = {n for n in _imports(path) if PRODUCT & set(n.split("."))}
     assert not bad, f"kernel module {_id(path)} imports product code {bad}"
 
 
-def test_core_has_no_product_subpackage():
-    assert not (PKG / "core" / PRODUCT).exists(), "core/ is kernel only"
+@pytest.mark.parametrize(
+    ("layer", "path"),
+    [(lay, p) for lay, p in _modules() if BUSINESSES & set(p.relative_to(PKG).parts)],
+    ids=_id,
+)
+def test_business_never_imports_a_channel(layer: str, path: Path):
+    bad = {n for n in _imports(path) if CHANNELS & set(n.split("."))}
+    assert not bad, f"business module {_id(path)} imports channel code {bad}"
+
+
+@pytest.mark.parametrize("product", sorted(PRODUCT))
+def test_core_has_no_product_subpackage(product: str):
+    assert not (PKG / "core" / product).exists(), "core/ is kernel only"

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from agent.core.run import RunContext
 from agent.core.tools import FunctionTool, Tool, ToolResult
 from agent.domain.agent import Effect
-from agent.domain.whatsapp.pedidos import Pedido, PedidoStore, rechazo_para
+from agent.domain.restaurante.pedidos import Pedido, PedidoStore, rechazo_para
 from agent.platform.clock import Clock
 
 

@@ -42,20 +42,26 @@ reference for "how was X actually solved", never to port wholesale.
 ## The one rule: dependencies point inward
 
 Edges know the core; the core never imports an edge. `tests/test_architecture.py`
-enforces three rules: imports point inward; `platform/`, `domain/` and `core/` import
-no vendor SDK or web framework; kernel code never imports product code.
+enforces four rules: imports point inward; `platform/`, `domain/` and `core/` import
+no vendor SDK or web framework; kernel code never imports product code; the business
+(`restaurante/`) never imports a channel (`whatsapp/`).
 
 ```
-L4  edges/     channels.py (ChannelAdapter) · ingress · worker · whatsapp/ next
-L3  adapters/  models/anthropic.py · stores/, tracing/ (in-memory; SQLite + Langfuse later) · business tools later
+L4  edges/     channels.py (ChannelAdapter) · ingress · worker · whatsapp/ (the channel)
+L3  adapters/  models/anthropic.py · stores/, tracing/ (in-memory; SQLite + Langfuse) · restaurante/ (the business: tools, policy, SQLite; pos/ = external POS)
 L2  core/      runner · context · tools · policy · approval   (kernel only, never product)
-L1  domain/    agent.py (InboundEvent, AgentSpec, ToolSpec, PendingAction) · product subpackages later
+L1  domain/    agent.py (InboundEvent, AgentSpec, ToolSpec, PendingAction) · restaurante/ (pedidos, POS port)
 L0  platform/  config · model (Message, ModelRequest/Response, Usage, ModelProvider port) · clock · tracing port · cost
 ×   evaluation/  eval harness (outermost: imports anything, nothing imports it)
 ```
 
-**Kernel vs. product in folders:** kernel code sits at the top of each layer;
-product code goes in a product subpackage (`whatsapp/`). **Ports vs. implementations:**
+**Kernel vs. product in folders:** kernel code sits at the top of each layer; product
+code goes in a subpackage named for what it *is*: a **channel** (`edges/whatsapp/` —
+how people reach the bot) or the **business** (`domain/restaurante/`,
+`adapters/restaurante/` — what the bot does for them). The business never imports the
+channel, so the same restaurant could sit behind Telegram untouched. An external
+system the business talks to (e.g. the POS) is a vendor: its port lives in
+`domain/restaurante/`, its clients in `adapters/restaurante/pos/`. **Ports vs. implementations:**
 `platform/` holds only primitives and ports (no vendor imports); anything that calls
 a vendor (Anthropic, SQLite, Langfuse) is an adapter in `adapters/`. `tests/` mirrors
 `src/agent/`.
@@ -129,14 +135,14 @@ gets a learning-log note):
    responder (WhatsApp formatting, 4096-char limit); approvals as text yes/no
    first, interactive reply buttons later.
 5. ✓ **The business domain + first real tools** — the pedidos domain (a
-   restaurant: `domain/whatsapp/pedidos.py`), the connector
-   (`adapters/whatsapp/pedidos.py`: `pedidos__listar` READ + `pedidos__crear`
+   restaurant: `domain/restaurante/pedidos.py`), the connector
+   (`adapters/restaurante/pedidos.py`: `pedidos__listar` READ + `pedidos__crear`
    WRITE, in-memory store) and the **customer-scoped `Policy`**
    (`AllOf(CustomerScoped(), ConfirmWrites())`) with negative tests. The
    sender-scoped isolation goal, landed.
 6. ✓ **SQLite stores** — `SessionStore`, `PendingActions` and the `PedidoStore`
    survive restarts (a parked approval must outlive the process). `aiosqlite`
-   in `adapters/stores/sqlite.py` + `adapters/whatsapp/sqlite.py`; set
+   in `adapters/stores/sqlite.py` + `adapters/restaurante/sqlite.py`; set
    `DATABASE_PATH` to turn it on, unset = in-memory.
 7. ✓ **Langfuse tracing adapter** — `adapters/tracing/langfuse.py` behind the
    existing `Tracer` port (SDK v4, names → observation types, metadata

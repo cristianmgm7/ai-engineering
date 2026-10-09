@@ -1,8 +1,8 @@
-"""Tests for adapters/whatsapp/sqlite.py — pedidos that survive a restart."""
+"""Tests for adapters/restaurante/sqlite.py — pedidos that survive a restart."""
 
 from datetime import UTC, datetime
 
-from agent.adapters.whatsapp.sqlite import SqlitePedidoStore
+from agent.adapters.restaurante.sqlite import SqlitePedidoStore
 
 NOW = datetime(2026, 10, 6, 14, 0, tzinfo=UTC)
 CLIENTE_A = "5215550001111"
