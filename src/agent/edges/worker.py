@@ -22,7 +22,7 @@ from agent.core.approval import ApprovalGate, ApprovalOutcome
 from agent.core.run import RunContext, RunResult
 from agent.core.turns import TurnService
 from agent.domain.agent import AgentSpec
-from agent.edges.channels import ChannelAdapter, OutboundMessage, RoutedEvent
+from agent.edges.channels import ChannelAdapter, OutboundMessage, RoutedEvent, SendFailed
 
 logger = logging.getLogger(__name__)
 
@@ -94,14 +94,19 @@ class Worker:
             text = self._responder.failure()
 
         if text:
-            await self._channel.send(
-                OutboundMessage(
-                    agent_key=routed.agent_key,
-                    session_id=event.session_id,
-                    text=text,
-                    reply_to_event_id=event.event_id,
+            try:
+                await self._channel.send(
+                    OutboundMessage(
+                        agent_key=routed.agent_key,
+                        session_id=event.session_id,
+                        text=text,
+                        reply_to_event_id=event.event_id,
+                    )
                 )
-            )
+            except SendFailed as e:  # the channel said why; no traceback needed
+                logger.error("reply not delivered for event %s: %s", event.event_id, e)
+            except Exception:
+                logger.exception("reply not delivered for event %s", event.event_id)
 
     async def _respond(self, ctx: RunContext, routed: RoutedEvent) -> str | None:
         waiting = await self._approvals.waiting(ctx)

@@ -65,6 +65,19 @@ class Unauthorized(RejectedRequest):
     status_code = 401
 
 
+class SendFailed(Exception):
+    """Raised by ``send`` when the channel refuses an outbound message.
+
+    Carries the channel's own explanation (e.g. Meta's ``error.message``), which
+    ``raise_for_status`` would have thrown away.
+    """
+
+    def __init__(self, status_code: int, detail: str) -> None:
+        super().__init__(f"send failed ({status_code}): {detail}")
+        self.status_code = status_code
+        self.detail = detail
+
+
 class ChannelAdapter(Protocol):
     def parse_inbound(self, request: InboundRequest) -> RoutedEvent | None:
         """Verify and normalize. Raises ``RejectedRequest``; ``None`` = authentic but
