@@ -119,6 +119,25 @@ curl -s "https://graph.facebook.com/v21.0/<APP_ID>/subscriptions?access_token=<A
 3. Si configuraste Langfuse: abre la traza (`agent.run` → `model.generate` /
    `tool.execute`) y audítala — ¿se entiende qué contexto tuvo el agente?
 
+### Regresión de aislamiento (cada vez que cambie el agente o sus tools)
+
+`scripts/isolation_live.py` hace pasar a un cliente falso (`wa_id` que no posee
+nada) por tres ataques contra el bot real: ver sus propios pedidos, leer los de
+otro cliente y crear uno a nombre de otro. Firma webhooks válidos con el App
+Secret, así que corren el modelo y la política de verdad (cuesta centavos).
+Se ejecuta *dentro* del contenedor, que ve el webhook, el secret y la base:
+
+```bash
+ssh -i ~/.ssh/<llave>.pem ubuntu@<ip> 'cd ~/ai-engineering && docker compose exec -T agent python -' \
+  < scripts/isolation_live.py
+```
+
+Sale con `0` si el aislamiento aguantó, `1` si hubo fuga o escritura y `2` si es
+inconcluso (el bot no contestó, o no hay pedidos que atacar). Siempre borra las
+filas del cliente falso. Las respuestas al número inventado fallan con el error
+`131030` de Meta (no es destinatario): es lo esperado y se ve en los logs como
+`reply not delivered`.
+
 ## El token: temporal vs. permanente
 
 El token temporal de la consola ("Generar token" en Paso 1) dura ~24 h. Recibir
