@@ -11,13 +11,16 @@ one needs their yes in the chat.
 
 import logging
 from dataclasses import dataclass
+from datetime import timedelta
 
 import httpx
 from fastapi import FastAPI
 
 from agent.adapters.models.anthropic import AnthropicModelProvider
+from agent.adapters.restaurante.menu import CachedMenuStore, menu_tools
 from agent.adapters.restaurante.pedidos import InMemoryPedidoStore, pedidos_tools
 from agent.adapters.restaurante.policy import CustomerScoped
+from agent.adapters.restaurante.pos import PosClient, PosMenuStore, PosPedidoStore
 from agent.adapters.restaurante.sqlite import SqlitePedidoStore
 from agent.adapters.stores.memory import InMemoryPendingActions, InMemorySessionStore
 from agent.adapters.stores.sqlite import SqlitePendingActions, SqliteSessionStore
@@ -34,6 +37,7 @@ from agent.core.runner import ReasoningLoop
 from agent.core.tools import PolicyExecutor, StaticToolRegistry, Tool
 from agent.core.turns import TurnService
 from agent.domain.agent import AgentSpec, RunLimits
+from agent.domain.restaurante.menu import MenuStore
 from agent.edges.ingress import ChannelRoute, create_ingress
 from agent.edges.whatsapp.adapter import WhatsAppAdapter
 from agent.edges.whatsapp.replies import YesNoReplies
@@ -72,9 +76,18 @@ def build(
 ) -> WhatsAppApp:
     clock = clock or SystemClock()
     db = settings.database_path
-    if tools is None:  # the product's default connector; pass [] for a bare agent
-        pedido_store = SqlitePedidoStore(db) if db else InMemoryPedidoStore()
-        tools = pedidos_tools(pedido_store, clock)
+    pos_http: httpx.AsyncClient | None = None
+    if tools is None:  # the product's default connectors; pass [] for a bare agent
+        if settings.pos_base_url and settings.pos_api_key:
+            # The POS is the source of truth for orders and the menu: its stores
+            # replace the local ones behind the same ports. Menu reads are cached.
+            pos_http = httpx.AsyncClient(timeout=10.0)
+            pos = PosClient(pos_http, settings.pos_base_url, settings.pos_api_key)
+            menu_store: MenuStore = CachedMenuStore(PosMenuStore(pos), clock, timedelta(minutes=5))
+            tools = pedidos_tools(PosPedidoStore(pos), clock) + menu_tools(menu_store)
+        else:
+            pedido_store = SqlitePedidoStore(db) if db else InMemoryPedidoStore()
+            tools = pedidos_tools(pedido_store, clock)
     agents: dict[str, AgentSpec] = {}
     if settings.whatsapp_phone_number_id:
         agents[settings.whatsapp_phone_number_id] = AgentSpec(
@@ -125,11 +138,13 @@ def build(
     queue = InProcessQueue(worker)
 
     async def shutdown() -> None:
-        """Drain in-flight turns, flush tracing, close the outbound client."""
+        """Drain in-flight turns, flush tracing, close the outbound clients."""
         await queue.drain()
         flush = getattr(tracer, "flush", None)
         if flush:
             flush()
+        if pos_http is not None:
+            await pos_http.aclose()
         await outbound.aclose()
 
     http_app = create_ingress(
