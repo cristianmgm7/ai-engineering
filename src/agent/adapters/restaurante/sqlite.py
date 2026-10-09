@@ -8,7 +8,7 @@ import json
 from datetime import datetime
 
 from agent.adapters.stores.sqlite import open_db
-from agent.domain.whatsapp.pedidos import Pedido
+from agent.domain.restaurante.pedidos import Pedido
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS pedidos (

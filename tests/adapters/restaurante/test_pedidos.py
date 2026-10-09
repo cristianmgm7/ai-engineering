@@ -1,11 +1,11 @@
-"""Tests for adapters/whatsapp/pedidos.py — the connector, sender-scoped by construction."""
+"""Tests for adapters/restaurante/pedidos.py — the connector, sender-scoped by construction."""
 
 from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
 
-from agent.adapters.whatsapp.pedidos import InMemoryPedidoStore, pedidos_tools
+from agent.adapters.restaurante.pedidos import InMemoryPedidoStore, pedidos_tools
 from agent.core.run import RunContext
 from agent.domain.agent import AgentSpec
 from agent.platform.clock import FixedClock

@@ -1,4 +1,4 @@
-"""Tests for adapters/whatsapp/policy.py — the isolation rule, with its negative cases.
+"""Tests for adapters/restaurante/policy.py — the isolation rule, with its negative cases.
 
 The CLAUDE.md rule made executable: a customer only ever touches their own
 data. Proven at both levels — the rule alone, and through the real
@@ -7,8 +7,8 @@ data. Proven at both levels — the rule alone, and through the real
 
 from datetime import UTC, datetime
 
-from agent.adapters.whatsapp.pedidos import InMemoryPedidoStore, pedidos_tools
-from agent.adapters.whatsapp.policy import CustomerScoped
+from agent.adapters.restaurante.pedidos import InMemoryPedidoStore, pedidos_tools
+from agent.adapters.restaurante.policy import CustomerScoped
 from agent.core.policy import AllOf, Allow, ConfirmWrites, Deny
 from agent.core.run import RunContext
 from agent.core.tools import PARKED_CONTENT, PolicyExecutor, StaticToolRegistry

@@ -1,8 +1,8 @@
-"""Pedidos (orders) — the bot's first business domain: a restaurant on WhatsApp.
+"""Pedidos (orders) — the bot's first business domain: a restaurant.
 
 Pure Pydantic plus deterministic rules. ``customer_id`` is the owner's
-``wa_id``: the tools never let the model choose it, and ``CustomerScoped``
-denies any attempt. The store is a port; implementations live in ``adapters/``.
+channel id (on WhatsApp, the ``wa_id``): the tools never let the model choose it, and
+``CustomerScoped`` denies any attempt. The store is a port; implementations live in ``adapters/``.
 """
 
 from datetime import datetime

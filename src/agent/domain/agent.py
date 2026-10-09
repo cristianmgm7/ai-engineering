@@ -6,7 +6,7 @@ and the tenant is the sender (sender-scoped). ``Message`` and the content blocks
 are re-exported from ``platform.model`` because they are the model's wire format.
 
 Product entities (e.g. Connector, ConnectorAccount) will live in a product
-subpackage (``domain/whatsapp/``) when a component needs them.
+subpackage (``domain/restaurante/``) when a component needs them.
 """
 
 from datetime import UTC, datetime
