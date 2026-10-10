@@ -58,6 +58,13 @@ rol); los roles no. Buscar las respuestas, no las palabras:
   `ModelProvider`. Nunca `IClock`, `AbstractClock` ni `*Impl`.
 - **Implementación** = tecnología o variante + rol: `SqlitePedidoStore`,
   `AnthropicModelProvider`, `SystemClock`, `NoopTracer`, `StaticToolRegistry`.
+  Dos relajaciones deliberadas (auditado 2026-10): las **reglas** (`Policy`,
+  `Grader`) se nombran por lo que afirman, sin sufijo de rol — `ConfirmWrites`,
+  `CustomerScoped`, `MaxSteps` — porque se leen como frases en el punto de uso;
+  y una impl **única** puede nombrarse por su mecanismo (`ReasoningLoop` para
+  `AgentRunner`, `InstructionsContext`, `YesNoReplies`). Inconsistencias reales
+  conocidas: `InMemoryPendingActions`/`SqlitePendingActions` pierden el `Store`
+  de su puerto (`PendingActionStore`); `InProcessQueue` pierde el `Event`.
 - **Decorador** = `Traced*` envuelve un puerto y delega (`TracedModelProvider`).
 - **Valores/resultados** sin sufijo de patrón: `RunResult`, `ToolResult`,
   `ApprovalOutcome`; decisiones como verbos: `Allow`, `Deny`, `RequireApproval`.
