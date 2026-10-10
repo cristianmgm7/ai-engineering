@@ -3,24 +3,15 @@
 Tenant-level data, not customer data: every customer sees the same menu, so
 nothing here carries a ``customer_id`` and ``CustomerScoped`` has no say. The
 POS is the source of truth; we never persist the menu, at most cache it
-(``CachedMenuStore`` in adapters). The store is a port; the POS-backed
-implementation lives in ``adapters/restaurante/pos/``.
+(``CachedMenuStore`` in adapters). The entity lives in ``models.py`` and is
+re-exported here; the POS-backed store lives in ``adapters/restaurante/pos/``.
 """
 
 from typing import Protocol
 
-from pydantic import BaseModel, ConfigDict
+from agent.domain.restaurante.models import MenuItem
 
-
-class MenuItem(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    id: str  # the POS's product id (sku)
-    nombre: str
-    precio_centavos: int  # money as integer cents; floats drift
-
-    def precio_texto(self) -> str:
-        return f"${self.precio_centavos / 100:.2f}"
+__all__ = ["MenuItem", "MenuStore"]
 
 
 class MenuStore(Protocol):

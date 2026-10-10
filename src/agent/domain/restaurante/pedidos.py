@@ -1,23 +1,17 @@
 """Pedidos (orders) — the bot's first business domain: a restaurant.
 
-Pure Pydantic plus deterministic rules. ``customer_id`` is the owner's
-channel id (on WhatsApp, the ``wa_id``): the tools never let the model choose it, and
-``CustomerScoped`` denies any attempt. The store is a port; implementations live in ``adapters/``.
+Deterministic rules plus the store port. The entity lives in ``models.py`` and
+is re-exported here. ``customer_id`` is the owner's channel id (on WhatsApp, the
+``wa_id``): the tools never let the model choose it, and ``CustomerScoped``
+denies any attempt. The store is a port; implementations live in ``adapters/``.
 """
 
 from datetime import datetime
 from typing import Protocol
 
-from pydantic import BaseModel, ConfigDict
+from agent.domain.restaurante.models import Pedido
 
-
-class Pedido(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    id: str
-    customer_id: str  # the wa_id that owns it
-    items: tuple[str, ...]  # the dishes in the customer's words ("2 tacos al pastor")
-    creado: datetime  # timezone-aware
+__all__ = ["Pedido", "PedidoStore", "rechazo_para"]
 
 
 class PedidoStore(Protocol):
