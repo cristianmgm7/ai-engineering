@@ -76,7 +76,7 @@ class SqliteSessionStore:
             return await cursor.fetchone() is not None
 
 
-class SqlitePendingActions:
+class SqlitePendingActionStore:
     """Parked approvals that outlive the process — the point of this station."""
 
     def __init__(self, path: str) -> None:

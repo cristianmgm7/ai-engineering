@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from pydantic import BaseModel
 
-from agent.adapters.stores.memory import InMemoryPendingActions
+from agent.adapters.stores.memory import InMemoryPendingActionStore
 from agent.core.approval import (
     ApprovalOutcome,
     ApprovalStatus,
@@ -63,7 +63,7 @@ class Revocable:
 
 def wire(policy=None, ttl=timedelta(hours=1)):
     clock = MovableClock()
-    gate = StoreApprovalGate(InMemoryPendingActions(), clock, ttl)
+    gate = StoreApprovalGate(InMemoryPendingActionStore(), clock, ttl)
     registry = StaticToolRegistry([create_event])
     executor = PolicyExecutor(registry, policy or ConfirmWrites(), gate)
     gate.bind(executor)
@@ -163,7 +163,7 @@ async def test_a_tool_removed_from_the_agent_while_waiting_is_refused():
 
 
 async def test_an_unbound_gate_fails_loudly():
-    gate = StoreApprovalGate(InMemoryPendingActions(), MovableClock())
+    gate = StoreApprovalGate(InMemoryPendingActionStore(), MovableClock())
     with pytest.raises(RuntimeError):
         await gate.decide("x", True, OWNER)
 

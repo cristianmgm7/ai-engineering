@@ -4,7 +4,7 @@ A "restart" is a fresh store instance over the same file: nothing in memory
 carries over, so whatever the second instance sees came from disk.
 """
 
-from agent.adapters.stores.sqlite import SqlitePendingActions, SqliteSessionStore
+from agent.adapters.stores.sqlite import SqlitePendingActionStore, SqliteSessionStore
 from agent.domain.agent import Message, PendingAction, ToolUseBlock
 from agent.platform.model import Role, TextBlock
 
@@ -64,8 +64,8 @@ async def test_sessions_do_not_mix(tmp_path):
 
 
 async def test_a_parked_approval_outlives_the_process(tmp_path):
-    await SqlitePendingActions(db(tmp_path)).add(action())
-    restarted = SqlitePendingActions(db(tmp_path))  # the point of this station
+    await SqlitePendingActionStore(db(tmp_path)).add(action())
+    restarted = SqlitePendingActionStore(db(tmp_path))  # the point of this station
     found = await restarted.get("pa-1")
     assert found is not None and found.call.input == {"items": ["1 pozole"]}
     assert [a.id for a in await restarted.for_session("s1", "u1")] == ["pa-1"]
@@ -73,7 +73,7 @@ async def test_a_parked_approval_outlives_the_process(tmp_path):
 
 
 async def test_claim_is_find_and_delete(tmp_path):
-    store = SqlitePendingActions(db(tmp_path))
+    store = SqlitePendingActionStore(db(tmp_path))
     await store.add(action())
     first = await store.claim("pa-1")
     assert first is not None and first.id == "pa-1"

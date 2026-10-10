@@ -62,9 +62,10 @@ rol); los roles no. Buscar las respuestas, no las palabras:
   `Grader`) se nombran por lo que afirman, sin sufijo de rol — `ConfirmWrites`,
   `CustomerScoped`, `MaxSteps` — porque se leen como frases en el punto de uso;
   y una impl **única** puede nombrarse por su mecanismo (`ReasoningLoop` para
-  `AgentRunner`, `InstructionsContext`, `YesNoReplies`). Inconsistencias reales
-  conocidas: `InMemoryPendingActions`/`SqlitePendingActions` pierden el `Store`
-  de su puerto (`PendingActionStore`); `InProcessQueue` pierde el `Event`.
+  `AgentRunner`, `InstructionsContext`, `YesNoReplies`). Inconsistencia real
+  conocida: `InProcessQueue` pierde el `Event` de su puerto (`EventQueue`).
+  (Las `*PendingActions` perdían el `Store`; renombradas a
+  `InMemoryPendingActionStore`/`SqlitePendingActionStore` el 2026-10-10.)
 - **Decorador** = `Traced*` envuelve un puerto y delega (`TracedModelProvider`).
 - **Valores/resultados** sin sufijo de patrón: `RunResult`, `ToolResult`,
   `ApprovalOutcome`; decisiones como verbos: `Allow`, `Deny`, `RequireApproval`.

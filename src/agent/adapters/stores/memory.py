@@ -8,7 +8,7 @@ real atomic find-and-delete.
 from agent.domain.agent import Message, PendingAction
 
 
-class InMemoryPendingActions:
+class InMemoryPendingActionStore:
     def __init__(self) -> None:
         self._actions: dict[str, PendingAction] = {}
 

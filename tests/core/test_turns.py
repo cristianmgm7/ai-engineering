@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import BaseModel
 
-from agent.adapters.stores.memory import InMemoryPendingActions, InMemorySessionStore
+from agent.adapters.stores.memory import InMemoryPendingActionStore, InMemorySessionStore
 from agent.core.approval import ApprovalStatus, StoreApprovalGate
 from agent.core.context import InstructionsContext
 from agent.core.memory import WindowMemory
@@ -98,7 +98,7 @@ def event(text: str, event_id: str, principal: str = "u1") -> InboundEvent:
 def service(model: Scripted) -> tuple[TurnService, InMemorySessionStore]:
     clock = FixedClock(datetime(2026, 10, 6, 14, 5, tzinfo=UTC))
     store = InMemorySessionStore()
-    gate = StoreApprovalGate(InMemoryPendingActions(), clock)
+    gate = StoreApprovalGate(InMemoryPendingActionStore(), clock)
     registry = StaticToolRegistry([create_event])
     executor = PolicyExecutor(registry, ConfirmWrites(), gate)
     gate.bind(executor)
