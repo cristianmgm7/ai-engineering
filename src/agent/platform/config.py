@@ -37,9 +37,10 @@ class Settings(BaseSettings):
     whatsapp_phone_number_id: str | None = None  # the bot's sender id (= webhook :hook)
     whatsapp_graph_version: str = "v21.0"  # Graph API version in the send URL
 
-    # --- POS (L3 · adapters/restaurante/pos). Optional: unset = POS off, local stores ---
-    pos_base_url: str | None = None  # e.g. https://pos.example.com/api/v1
-    pos_api_key: SecretStr | None = None  # Bearer for the POS API
+    # --- POS (L3 · adapters/restaurante/pos) — VectorPOS. Unset = POS off, local stores ---
+    pos_base_url: str | None = None  # https://api.vectorpos.com.co
+    pos_user: str | None = None  # HTTP Basic username: the authorized VectorPOS user
+    pos_api_key: SecretStr | None = None  # HTTP Basic password: the branch's API token
 
     # --- Storage (L3 · adapters/stores) ---
     database_path: str | None = None  # SQLite file; unset = in-memory, state dies on restart

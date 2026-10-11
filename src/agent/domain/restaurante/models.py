@@ -8,7 +8,35 @@ makes with ``platform.model`` types.
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class LineaPedido(BaseModel):
+    """One line of an order, structured: the POS registers codes and quantities,
+    not prose. ``plato`` is the dish name — the menu's name when a catalog
+    exists; prices are never here, they come from the catalog alone."""
+
+    model_config = ConfigDict(frozen=True)
+
+    plato: str
+    cantidad: int = Field(default=1, ge=1)
+    detalles: str | None = None  # the customer's tweaks ("sin cebolla")
+
+    def texto(self) -> str:
+        base = f"{self.cantidad}× {self.plato}"
+        return f"{base} ({self.detalles})" if self.detalles else base
+
+
+class DatosEntrega(BaseModel):
+    """Who receives the order and where. The POS requires name, phone and
+    address on every order; ``telefono`` is the sender's channel id (wa_id),
+    set by the tool — never by the model."""
+
+    model_config = ConfigDict(frozen=True)
+
+    nombre: str
+    telefono: str
+    direccion: str  # or "recoge en el local"
 
 
 class Pedido(BaseModel):
@@ -16,7 +44,7 @@ class Pedido(BaseModel):
 
     id: str
     customer_id: str  # the wa_id that owns it
-    items: tuple[str, ...]  # the dishes in the customer's words ("2 tacos al pastor")
+    items: tuple[str, ...]  # display lines ("2× COMBO HAMBURGUESA (sin cebolla)")
     creado: datetime  # timezone-aware
 
 

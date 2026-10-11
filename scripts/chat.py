@@ -12,10 +12,15 @@ Sal con "salir" o Ctrl-D.
 """
 
 import asyncio
+from datetime import timedelta
+
+import httpx
 
 from agent.adapters.models.anthropic import AnthropicModelProvider
+from agent.adapters.restaurante.menu import CachedMenuStore, menu_tools
 from agent.adapters.restaurante.pedidos import InMemoryPedidoStore, pedidos_tools
 from agent.adapters.restaurante.policy import CustomerScoped
+from agent.adapters.restaurante.pos import PosClient, PosMenuStore, PosPedidoStore
 from agent.adapters.restaurante.sqlite import SqlitePedidoStore
 from agent.adapters.stores.memory import InMemoryPendingActionStore, InMemorySessionStore
 from agent.adapters.stores.sqlite import SqlitePendingActionStore, SqliteSessionStore
@@ -54,7 +59,7 @@ class ConsoleChannel:
         print(f"\n🤖 {message.text}\n")
 
 
-def build_worker() -> tuple[Worker, Tracer]:
+def build_worker() -> tuple[Worker, Tracer, httpx.AsyncClient | None]:
     settings = get_settings()
     clock = SystemClock()
     db = settings.database_path
@@ -65,8 +70,16 @@ def build_worker() -> tuple[Worker, Tracer]:
 
         tracer = LangfuseTracer.from_settings(settings)
 
-    pedido_store = SqlitePedidoStore(db) if db else InMemoryPedidoStore()
-    tools = pedidos_tools(pedido_store, clock)
+    # Mismo cableado condicional que app.py: con credenciales, el POS es la verdad.
+    pos_http: httpx.AsyncClient | None = None
+    if settings.pos_base_url and settings.pos_user and settings.pos_api_key:
+        pos_http = httpx.AsyncClient(timeout=10.0)
+        pos = PosClient(pos_http, settings.pos_base_url, settings.pos_user, settings.pos_api_key)
+        menu_store = CachedMenuStore(PosMenuStore(pos), clock, timedelta(minutes=5))
+        tools = pedidos_tools(PosPedidoStore(pos), clock) + menu_tools(menu_store)
+    else:
+        pedido_store = SqlitePedidoStore(db) if db else InMemoryPedidoStore()
+        tools = pedidos_tools(pedido_store, clock)
     spec = AgentSpec(
         name="console-assistant",
         instructions=INSTRUCTIONS,  # las mismas del edge de WhatsApp, a propósito
@@ -98,11 +111,11 @@ def build_worker() -> tuple[Worker, Tracer]:
         TextResponder(),
         ConsoleChannel(),
     )
-    return worker, tracer
+    return worker, tracer, pos_http
 
 
 async def main() -> None:
-    worker, tracer = build_worker()
+    worker, tracer, pos_http = build_worker()
     print("Chat local contra el agente real (modelo de verdad: cuesta dinero).")
     print('Prueba: "¿qué pedidos tengo?" · "quiero 2 tacos al pastor" · "sí" · "salir"\n')
     turn = 0
@@ -127,6 +140,8 @@ async def main() -> None:
         flush = getattr(tracer, "flush", None)
         if flush:
             flush()
+        if pos_http is not None:
+            await pos_http.aclose()
 
 
 if __name__ == "__main__":

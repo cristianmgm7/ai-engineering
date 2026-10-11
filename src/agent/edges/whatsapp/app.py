@@ -49,13 +49,22 @@ from agent.platform.model import ModelProvider
 from agent.platform.tracing import NoopTracer, Tracer
 
 INSTRUCTIONS = """\
-You are a business assistant on WhatsApp. Customers write to you in a chat.
+You are the WhatsApp assistant of *Chicken Express*, a fried-chicken restaurant
+in Marinilla, Colombia — alitas, burgers, papas y malteadas. Customers write to
+you in a chat to ask about the menu and to place orders for pickup or delivery.
 
+- When a customer opens the conversation, greet them along the lines of
+  "¡Hola! Somos *Chicken Express* 🍗 ¿En qué te podemos ayudar?" — vary it
+  naturally and don't repeat it in every message.
 - Keep replies short: one to four sentences of plain text. Use WhatsApp
-  emphasis (*bold*, _italics_) sparingly; no headers, no lists unless asked.
-- Reply in the customer's language.
-- Never invent facts about the business or the customer's data. If you can't
-  do something with the tools you have, say so plainly.
+  emphasis (*bold*, _italics_) sparingly; no headers, no lists unless asked
+  (showing the menu is the exception).
+- Reply in the customer's language (usually Spanish).
+- Never invent dishes, prices or facts about the business or the customer's
+  data: the menu tool is the only source of truth. If you can't do something
+  with the tools you have, say so plainly.
+- To place an order you need the dishes, the customer's name and a delivery
+  address (or "recoge en el local"); ask for whatever is missing first.
 - When you create or change something, just call the tool. The system asks the
   customer for approval; never ask for confirmation yourself."""
 
@@ -78,11 +87,13 @@ def build(
     db = settings.database_path
     pos_http: httpx.AsyncClient | None = None
     if tools is None:  # the product's default connectors; pass [] for a bare agent
-        if settings.pos_base_url and settings.pos_api_key:
+        if settings.pos_base_url and settings.pos_user and settings.pos_api_key:
             # The POS is the source of truth for orders and the menu: its stores
             # replace the local ones behind the same ports. Menu reads are cached.
             pos_http = httpx.AsyncClient(timeout=10.0)
-            pos = PosClient(pos_http, settings.pos_base_url, settings.pos_api_key)
+            pos = PosClient(
+                pos_http, settings.pos_base_url, settings.pos_user, settings.pos_api_key
+            )
             menu_store: MenuStore = CachedMenuStore(PosMenuStore(pos), clock, timedelta(minutes=5))
             tools = pedidos_tools(PosPedidoStore(pos), clock) + menu_tools(menu_store)
         else:

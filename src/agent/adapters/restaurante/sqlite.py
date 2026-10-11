@@ -2,13 +2,15 @@
 
 Shares the database file with the kernel stores (its own table), reusing
 ``open_db`` with a product schema. The row id doubles as the pedido id.
+Lines are persisted as display text; the delivery data is not kept — this
+store is the POS-less fallback, and only the POS needs it.
 """
 
 import json
 from datetime import datetime
 
 from agent.adapters.stores.sqlite import open_db
-from agent.domain.restaurante.pedidos import Pedido
+from agent.domain.restaurante.pedidos import DatosEntrega, LineaPedido, Pedido
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS pedidos (
@@ -34,7 +36,14 @@ class SqlitePedidoStore:
             rows = await cursor.fetchall()
         return [_pedido(row_id, customer_id, items, creado) for row_id, items, creado in rows]
 
-    async def place(self, customer_id: str, items: list[str], creado: datetime) -> Pedido:
+    async def place(
+        self,
+        customer_id: str,
+        lineas: list[LineaPedido],
+        entrega: DatosEntrega,
+        creado: datetime,
+    ) -> Pedido:
+        items = [linea.texto() for linea in lineas]
         async with open_db(self._path, _SCHEMA) as db:
             cursor = await db.execute(
                 "INSERT INTO pedidos (customer_id, items, creado) VALUES (?, ?, ?)",
