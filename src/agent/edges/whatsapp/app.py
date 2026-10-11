@@ -78,11 +78,13 @@ def build(
     db = settings.database_path
     pos_http: httpx.AsyncClient | None = None
     if tools is None:  # the product's default connectors; pass [] for a bare agent
-        if settings.pos_base_url and settings.pos_api_key:
+        if settings.pos_base_url and settings.pos_user and settings.pos_api_key:
             # The POS is the source of truth for orders and the menu: its stores
             # replace the local ones behind the same ports. Menu reads are cached.
             pos_http = httpx.AsyncClient(timeout=10.0)
-            pos = PosClient(pos_http, settings.pos_base_url, settings.pos_api_key)
+            pos = PosClient(
+                pos_http, settings.pos_base_url, settings.pos_user, settings.pos_api_key
+            )
             menu_store: MenuStore = CachedMenuStore(PosMenuStore(pos), clock, timedelta(minutes=5))
             tools = pedidos_tools(PosPedidoStore(pos), clock) + menu_tools(menu_store)
         else:

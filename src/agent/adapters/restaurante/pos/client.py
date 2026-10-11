@@ -1,44 +1,100 @@
-"""The POS vendor client: speaks the POS's HTTP API and nothing else.
+"""The POS vendor client: speaks VectorPOS's HTTP API and nothing else.
 
-Three endpoints (a hypothetical contract until the real POS exists; only this
-module changes when it does):
+VectorPOS (docs: vectorpos.readme.io) — the pieces we use:
 
-- ``GET  /products``           → the store's catalog
-- ``POST /orders``             → register an order
-- ``GET  /orders/{order_id}``  → one order's current state
+- ``GET  /products``      → the branch's catalog (a bare JSON array)
+- ``POST /invoice``       → register an order ("Registrar pedido")
+- ``GET  /invoice/{id}``  → one registered order ("Consultar cuenta")
 
-The DTOs mirror the POS's JSON exactly — ours is ``domain/restaurante``; the
-translation happens in ``stores.py``, never here. Every failure (HTTP status or
-network) becomes ``PosError``, like ``SendFailed`` does for the channel, so
-nothing above this module handles httpx exceptions.
+Auth is HTTP Basic: username = the authorized VectorPOS user, password = the
+API token generated for the *branch* (one token per sucursal, created in the
+admin panel under "Conecta VectorPOS").
+
+Two contract quirks that shape everything above this module:
+
+- **No idempotency**: ``POST /invoice`` has no idempotency key, so a blind
+  retry duplicates the order. This client never retries; the caller keeps the
+  pedido → invoice id mapping itself (``stores.py``).
+- **Errors come in two shapes**: HTTP errors (401 ``{"msg": "Token inválido"}``,
+  400, 404) and *business* refusals inside a 200 (``status: false`` with
+  ``error.msg``, e.g. not enough inventory). Both become ``PosError`` here, like
+  ``SendFailed`` does for the channel, so nothing above handles httpx or shapes.
+
+The DTOs mirror the POS's JSON exactly, camelCase included — ours is
+``domain/restaurante``; the translation happens in ``stores.py``, never here.
 """
-
-from datetime import datetime
 
 import httpx
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 
 
 class PosProduct(BaseModel):
-    """DTO: the POS's shape for a product, not our ``MenuItem``."""
-
-    model_config = ConfigDict(frozen=True)
-
-    sku: str
-    name: str
-    price_cents: int
-    available: bool = True
-
-
-class PosOrder(BaseModel):
-    """DTO: the POS's shape for an order, not our ``Pedido``."""
+    """DTO: a catalog ``Product``. ``id`` doubles as the code ``POST /invoice``
+    expects in ``items[].code``; ``price`` is in the branch's currency (COP),
+    a plain number. Option groups (combos, pizzas, additionals) exist in the
+    payload but are not modeled yet — plain items first."""
 
     model_config = ConfigDict(frozen=True)
 
     id: str
-    items: tuple[str, ...]
-    status: str
-    created_at: datetime
+    name: str
+    price: float
+    category: str | None = None
+
+
+class PosClientData(BaseModel):
+    """DTO: the ``client`` object — all three fields are required by the POS."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    phone: str
+    address: str
+
+
+class PosNewItem(BaseModel):
+    """DTO: one ``items[]`` entry of ``POST /invoice``. ``priceUnit`` must come
+    from the catalog — the POS trusts it, so nobody upstream may invent it."""
+
+    model_config = ConfigDict(frozen=True)
+
+    code: str
+    amount: float
+    priceUnit: float
+    details: str | None = None
+
+
+class PosNewInvoice(BaseModel):
+    """DTO: the ``POST /invoice`` body ("Registrar pedido")."""
+
+    model_config = ConfigDict(frozen=True)
+
+    client: PosClientData
+    items: tuple[PosNewItem, ...]
+    delivery_price: float = 0
+    delivery_details: str = ""
+
+
+class PosInvoiceItem(BaseModel):
+    """DTO: one ``items[]`` entry as ``GET /invoice/{id}`` returns it."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    code: str
+    amount: float
+    details: str | None = None
+
+
+class PosInvoice(BaseModel):
+    """DTO: a registered order. The POS exposes no dates and no kitchen or
+    delivery state — only ``totalPaid`` hints at progress."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    items: tuple[PosInvoiceItem, ...]
+    totalPaid: float = 0
 
 
 class PosError(Exception):
@@ -52,37 +108,44 @@ class PosError(Exception):
 
 
 class PosClient:
-    def __init__(self, http: httpx.AsyncClient, base_url: str, api_key: SecretStr) -> None:
+    def __init__(self, http: httpx.AsyncClient, base_url: str, user: str, token: SecretStr) -> None:
         self._http = http
         self._base_url = base_url.rstrip("/")
-        self._api_key = api_key
+        self._auth = httpx.BasicAuth(user, token.get_secret_value())
 
     async def list_products(self) -> list[PosProduct]:
         data = await self._request("GET", "/products")
-        return [PosProduct.model_validate(p) for p in self._expect_list(data, "products")]
+        if not isinstance(data, list):
+            raise PosError(200, "unexpected POS payload: /products should be a list")
+        return [PosProduct.model_validate(p) for p in data]
 
-    async def create_order(self, items: list[str], idempotency_key: str) -> PosOrder:
-        """Register an order. ``idempotency_key`` lets the POS drop a duplicate
-        POST if we retry; the caller must reuse the same key for the same intent."""
-        data = await self._request(
-            "POST",
-            "/orders",
-            json={"items": items},
-            headers={"Idempotency-Key": idempotency_key},
-        )
-        return PosOrder.model_validate(data)
+    async def create_invoice(self, draft: PosNewInvoice) -> str:
+        """Register an order; returns the POS's invoice id. A 200 can still be a
+        refusal (``status: false``) — that surfaces as ``PosError`` too. Never
+        retry a timed-out call: there is no idempotency key to make it safe."""
+        data = await self._request("POST", "/invoice", json=draft.model_dump(exclude_none=True))
+        if not isinstance(data, dict):
+            raise PosError(200, "unexpected POS payload: /invoice should be an object")
+        if not data.get("status") or not data.get("resp"):
+            error = data.get("error") or {}
+            msg = error.get("msg") if isinstance(error, dict) else str(error)
+            raise PosError(200, msg or "el POS no registró el pedido")
+        return str(data["resp"])
 
-    async def get_order(self, order_id: str) -> PosOrder:
-        data = await self._request("GET", f"/orders/{order_id}")
-        return PosOrder.model_validate(data)
+    async def get_invoice(self, invoice_id: str) -> PosInvoice:
+        data = await self._request("GET", f"/invoice/{invoice_id}")
+        try:
+            return PosInvoice.model_validate(data)
+        except ValidationError as e:
+            # A 200 without the invoice fields is the POS's "not found"
+            # (``{"msg": "..."}``); anything else malformed lands here too.
+            msg = data.get("msg") if isinstance(data, dict) else None
+            raise PosError(404 if msg else 200, msg or f"invalid invoice payload: {e}") from e
 
-    async def _request(
-        self, method: str, path: str, json: dict | None = None, headers: dict | None = None
-    ) -> object:
-        auth = {"Authorization": f"Bearer {self._api_key.get_secret_value()}"}
+    async def _request(self, method: str, path: str, json: dict | None = None) -> object:
         try:
             response = await self._http.request(
-                method, f"{self._base_url}{path}", json=json, headers={**auth, **(headers or {})}
+                method, f"{self._base_url}{path}", json=json, auth=self._auth
             )
         except httpx.HTTPError as e:  # network: we never got an answer
             raise PosError(0, str(e)) from e
@@ -93,14 +156,14 @@ class PosClient:
         except ValueError as e:
             raise PosError(response.status_code, f"invalid JSON from POS: {e}") from e
 
-    @staticmethod
-    def _expect_list(data: object, key: str) -> list:
-        """The catalog comes wrapped: ``{"products": [...]}``."""
-        if not isinstance(data, dict) or not isinstance(data.get(key), list):
-            raise PosError(200, f"unexpected POS payload: missing '{key}' list")
-        return data[key]
 
-
-# A malformed but 2xx body (missing fields) surfaces as pydantic's ValidationError;
-# re-exported so callers can treat "POS spoke garbage" uniformly if they want to.
-__all__ = ["PosClient", "PosError", "PosOrder", "PosProduct", "ValidationError"]
+__all__ = [
+    "PosClient",
+    "PosClientData",
+    "PosError",
+    "PosInvoice",
+    "PosInvoiceItem",
+    "PosNewInvoice",
+    "PosNewItem",
+    "PosProduct",
+]

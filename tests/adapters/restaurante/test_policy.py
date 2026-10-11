@@ -21,6 +21,12 @@ OTRO = "5215550009999"
 
 SPEC = ToolSpec(name="pedidos__listar", description="d", input_schema={"type": "object"})
 
+CREAR_INPUT = {
+    "lineas": [{"plato": "tacos al pastor", "cantidad": 2}],
+    "nombre": "Ana",
+    "direccion": "Calle 1",
+}
+
 
 def ctx(principal: str = CLIENTE) -> RunContext:
     spec = AgentSpec(
@@ -73,7 +79,7 @@ async def test_reads_run_and_writes_park_for_the_rightful_sender():
     read = await executor().execute(call(), ctx())
     assert not read.is_error and "Sin pedidos" in read.content
 
-    write = await executor().execute(call("pedidos__crear", items=["2 tacos al pastor"]), ctx())
+    write = await executor().execute(call("pedidos__crear", **CREAR_INPUT), ctx())
     assert write.pending is not None and write.content == PARKED_CONTENT
 
 
@@ -81,6 +87,6 @@ async def test_even_an_approved_cross_customer_call_is_denied_on_recheck():
     # Permissions are re-checked when an approved call finally runs: a Deny
     # survives approval, so a parked call can never be laundered through a yes.
     boundary = executor()
-    smuggled = call("pedidos__crear", items=["2 tacos al pastor"], customer_id=OTRO)
+    smuggled = call("pedidos__crear", **CREAR_INPUT, customer_id=OTRO)
     result = await boundary.execute_approved(smuggled, ctx())
     assert result.is_error and "Not allowed" in result.content
